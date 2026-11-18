@@ -32,9 +32,9 @@ class KalmanFilter:
     def predict(self, v, w, dt):
         """Etape de prediction : P augmente."""
         th = self.x[2]
-        B = np.array([[np.cos(th) * dt, 0.0],
-                      [np.sin(th) * dt, 0.0],
-                      [0.0,             dt]])
+        B = np.array([[np.cos(th) * dt, 0.0], # v influence x, w n'influence pas x
+                      [np.sin(th) * dt, 0.0], # v influence y, w n'influence pas y
+                      [0.0,             dt]]) # v n'influence pas theta, w influence theta
         self.x = self.x + B @ np.array([v, w])     # A = I
         self.x[2] = wrap(self.x[2])
         Q = B @ self.Su @ B.T + self.Qf
