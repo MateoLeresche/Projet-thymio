@@ -6,12 +6,11 @@ Robot Thymio qui va d'un point A à un point B sur une surface blanche délimit�
 
 | Module | Dossier | Responsable | Rôle |
 |---|---|---|---|
-| Vision | `vision/` | P1 | caméra, QR code, obstacles, limites du terrain |
-| Filtre | `filtre/` | P2 | filtre de Kalman, estimation de pose |
-| Planification | `planification/` | P3 | grille d'occupation, A* |
-| Contrôle | `controle/` | P4 | commande moteurs (tdmclient), évitement local, intégration |
+| Vision | `vision/` | Sujith | caméra, QR code, obstacles, limites du terrain |
+| Filtre | `filtre/` | Matéo | filtre de Kalman, estimation de pose |
+| Planification | `planification/` | Robin | grille d'occupation, A* |
+| Contrôle | `controle/` | Matthieu | commande moteurs (tdmclient), évitement local, intégration |
 
-*(Remplacer P1 à P4 par les noms.)*
 
 ## Règles d'or
 
@@ -61,10 +60,10 @@ Conseils :
 
 ```
 interfaces.py          contrat partagé
-filtre/                P2 : Kalman (maths pures + boucle temporelle)
-vision/                P1
-planification/         P3
-controle/              P4
+filtre/                Matéo : Kalman (maths pures + boucle temporelle)
+vision/                Sujith
+planification/         Robin
+controle/              Matthieu
 simulation/            simulateur (vérité terrain, bruit, pertes de QR)
 evaluation/            métriques (erreur, NIS, graphes)
 tests/                 tests automatiques
@@ -75,4 +74,4 @@ docs/                  contrat d'interfaces, journal de calibration
 
 ## Journal de calibration
 
-Toute valeur mesurée (facteur Thymio → mm/s, empattement, bruit caméra, Q, taille de cellule, Ts) est notée dans `docs/CONTRAT_INTERFACES.md` (section 7) avec sa méthode et sa date. Utile pour le rapport et les questions du jury.
+Toute valeur mesurée (facteur Thymio → mm/s, empattement, bruit caméra, Q, taille de cellule, Ts) est notée dans `docs/CONTRAT_INTERFACES.md` (section 7) avec sa méthode et sa date. Utile pour le rapport et les questions du prof.
