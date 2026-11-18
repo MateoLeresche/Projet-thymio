@@ -35,7 +35,7 @@ class KalmanFilter:
         B = np.array([[np.cos(th) * dt, 0.0], # v influence x, w n'influence pas x
                       [np.sin(th) * dt, 0.0], # v influence y, w n'influence pas y
                       [0.0,             dt]]) # v n'influence pas theta, w influence theta
-        self.x = self.x + B @ np.array([v, w])     # A = I
+        self.x = self.x + B @ np.array([v, w])     # x_nouveau = A x_ancien + B u, avec A = I
         self.x[2] = wrap(self.x[2])
         Q = B @ self.Su @ B.T + self.Qf
         self.P = self.P + Q                        # A P A^T + Q avec A = I
