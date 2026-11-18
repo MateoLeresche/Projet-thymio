@@ -1,0 +1,8 @@
+numpy
+scipy
+matplotlib
+pytest
+# Selon les modules :
+# opencv-python   (vision)
+# tdmclient       (controle)
+# jupyter         (notebooks)
