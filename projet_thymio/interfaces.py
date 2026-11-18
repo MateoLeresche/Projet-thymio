@@ -1,7 +1,6 @@
 """Contrat d'interfaces entre les modules (version 0.1).
 
-Ce fichier est PARTAGE par les 4 modules. Personne ne le modifie sans
-prevenir le groupe (voir README.md et docs/CONTRAT_INTERFACES.md).
+Ce fichier est partagé par les 4 modules. (voir README.md et docs/CONTRAT_INTERFACES.md).
 
 Conventions :
 - Repere monde : origine = coin inferieur gauche du carre noir [A CONFIRMER],
