@@ -11,8 +11,15 @@ from . import params
 
 
 class FilterNode:
-    def __init__(self):
+    def __init__(self, R=None, sigma_v=None, sigma_w=None, q_floor=None):
+        """Les parametres par defaut viennent de params.py ; on peut les
+        surcharger (utile pour tester un filtre mal regle en simulation)."""
+        self.R = params.R if R is None else R
+        self.sigma_v = params.SIGMA_V if sigma_v is None else sigma_v
+        self.sigma_w = params.SIGMA_W if sigma_w is None else sigma_w
+        self.q_floor = params.Q_FLOOR if q_floor is None else q_floor
         self.kf = None                                   # cree a la 1re mesure visible
+        self.last_nis = None                             # NIS du dernier pas corrige
         self.last_u = ControlInput(t=0.0, v=0.0, omega=0.0)
         self.last_t = None
         self.pending_z = None
@@ -31,8 +38,8 @@ class FilterNode:
             m = self.pending_z
             if m is None or not m.visible:
                 return None
-            self.kf = KalmanFilter([m.x, m.y, m.theta], params.R,
-                                   params.SIGMA_V, params.SIGMA_W, params.Q_FLOOR)
+            self.kf = KalmanFilter([m.x, m.y, m.theta], self.R,
+                                   self.sigma_v, self.sigma_w, self.q_floor)
             self.last_t, self.pending_z = t_now, None
             return self._publish(t_now, used=True)
 
@@ -43,9 +50,10 @@ class FilterNode:
 
         # 3. correction si une mesure visible est arrivee (sinon : prediction seule)
         used = False
+        self.last_nis = None
         m, self.pending_z = self.pending_z, None
         if m is not None and m.visible:
-            self.kf.update(np.array([m.x, m.y, m.theta]))
+            _, _, self.last_nis = self.kf.update(np.array([m.x, m.y, m.theta]))
             used = True
 
         return self._publish(t_now, used)
