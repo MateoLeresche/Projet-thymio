@@ -1,121 +1,109 @@
-"""Banc d'essai : verite terrain + commandes/mesures bruitees, branche sur FilterNode.
+"""Validation du filtre en simulation. Lancer depuis la racine du depot :
 
-Le filtre ne voit que des ControlInput et des PoseMeasurement : il ne fait pas
-la difference avec P1 (camera) et P4 (controle). C'est l'interet du contrat.
+    python -m evaluation.run_validation
 
-Hypotheses du simulateur (coherentes avec le modele du filtre) :
-- le robot execute la commande + un bruit sur (v, omega) de ecart-types (sigma_v, sigma_w)
-  + un petit bruit de modele Q_floor ;
-- la camera mesure la verite + un bruit gaussien de ecart-types sigma_cam.
+Affiche un tableau de resultats (Monte Carlo) et sauvegarde des figures dans docs/figures/.
+Un filtre est COHERENT si : NEES moyen ~ 3, NIS moyen ~ 3, couverture +-3 sigma ~ 99,7 %.
 """
 import numpy as np
-from interfaces import ControlInput, PoseMeasurement
-from filtre.angles import wrap
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from simulation.simulator import simulate_and_filter, square_trajectory
+from evaluation.metrics import summarize, errors
 from filtre.filter_node import FilterNode
 from filtre import params
 
-
-def build_commands(segments, ts):
-    """Construit la liste des commandes (v, omega) pas par pas.
-
-    segments : liste de tuples
-        ("move", distance_mm, vitesse_mm_s)
-        ("turn", angle_rad, vitesse_rad_s)      (angle signe, + = anti-horaire)
-        ("wait", duree_s)
-    Le robot fait soit une translation pure, soit une rotation sur place.
-    """
-    cmds = []
-    for seg in segments:
-        kind = seg[0]
-        if kind == "move":
-            _, dist, speed = seg
-            n = int(round(abs(dist) / speed / ts))
-            cmds += [(np.sign(dist) * speed, 0.0)] * n
-        elif kind == "turn":
-            _, ang, rate = seg
-            n = int(round(abs(ang) / rate / ts))
-            cmds += [(0.0, np.sign(ang) * rate)] * n
-        elif kind == "wait":
-            n = int(round(seg[1] / ts))
-            cmds += [(0.0, 0.0)] * n
-        else:
-            raise ValueError(f"segment inconnu : {kind}")
-    return np.array(cmds, dtype=float)
+N_RUNS = 50
 
 
-def square_trajectory(side_mm=400.0, speed=50.0, rate=0.5, ts=params.TS):
-    """Carre parcouru dans le sens anti-horaire : 4 x (translation + rotation 90 deg)."""
-    segs = []
-    for _ in range(4):
-        segs += [("move", side_mm, speed), ("turn", np.pi / 2, rate)]
-    return build_commands(segs, ts)
+def monte_carlo(label, make_node=None, **sim_kw):
+    cmds = square_trajectory()
+    res = [summarize(simulate_and_filter(cmds, seed=s,
+                                         node=make_node() if make_node else None,
+                                         **sim_kw)) for s in range(N_RUNS)]
+    row = {
+        "scenario": label,
+        "rmse_pos": np.mean([r["rmse_pos_mm"] for r in res]),
+        "rmse_th": np.mean([r["rmse_theta_deg"] for r in res]),
+        "nees": np.mean([r["mean_nees"] for r in res]),
+        "nis": np.nanmean([r["mean_nis"] for r in res]),
+        "cov": np.mean([np.mean(r["coverage_3sigma"]) for r in res]),
+    }
+    return row
 
 
-def simulate_and_filter(commands, x0=(100.0, 100.0, 0.0), ts=params.TS,
-                        sigma_cam=params.SIGMA_CAM, sigma_v=params.SIGMA_V,
-                        sigma_w=params.SIGMA_W, q_floor=params.Q_FLOOR,
-                        cam_every=1, hidden=(), seed=0, node=None):
-    """Simule le robot, genere les messages et fait tourner le filtre.
+def main():
+    rows = [
+        monte_carlo("Camera 10 Hz (reglage nominal)"),
+        monte_carlo("Camera 2 Hz", cam_every=5),
+        monte_carlo("QR cache 2 s (t=10 a 12 s)", hidden=[(10.0, 12.0)]),
+        monte_carlo("QR cache 5 s (t=10 a 15 s)", hidden=[(10.0, 15.0)]),
+        monte_carlo("Odometrie seule (QR cache des 0,2 s)", hidden=[(0.2, 1e9)]),
+        monte_carlo("Q trop petit (x0,01)",
+                    make_node=lambda: FilterNode(sigma_v=params.SIGMA_V * 0.1,
+                                                 sigma_w=params.SIGMA_W * 0.1,
+                                                 q_floor=params.Q_FLOOR * 0.01)),
+        monte_carlo("R trop petit (x0,01)",
+                    make_node=lambda: FilterNode(R=params.R * 0.01)),
+    ]
+    print(f"{'Scenario':42s} {'RMSE pos':>9s} {'RMSE th':>8s} {'NEES':>7s} {'NIS':>6s} {'Couv.3s':>8s}")
+    print(f"{'':42s} {'(mm)':>9s} {'(deg)':>8s} {'(~3)':>7s} {'(~3)':>6s} {'(~99.7%)':>8s}")
+    for r in rows:
+        print(f"{r['scenario']:42s} {r['rmse_pos']:9.2f} {r['rmse_th']:8.2f} "
+              f"{r['nees']:7.2f} {r['nis']:6.2f} {100 * r['cov']:7.1f}%")
 
-    cam_every : une mesure camera tous les `cam_every` pas.
-    hidden    : intervalles (t_debut, t_fin) en s pendant lesquels le QR est cache.
-    node      : FilterNode a tester (par defaut : parametres de params.py).
-    Retourne un dict de tableaux (une ligne par pas).
-    """
-    rng = np.random.default_rng(seed)
-    node = node if node is not None else FilterNode()
-    Su = np.array([sigma_v, sigma_w])
-    q_std = np.sqrt(np.diag(q_floor))
+    # ---- figure 1 : un run nominal ----
+    run = simulate_and_filter(square_trajectory(), seed=1)
+    err = errors(run["truth"], run["est"])
+    sig = np.sqrt(np.array([np.diag(P) for P in run["P"]]))
+    t = run["t"]
+    fig, ax = plt.subplots(2, 3, figsize=(14, 7))
+    a = ax[0, 0]
+    a.plot(run["truth"][:, 0], run["truth"][:, 1], "k-", label="verite")
+    a.plot(run["est"][:, 0], run["est"][:, 1], "r--", label="estimation")
+    a.plot(run["z"][:, 0], run["z"][:, 1], ".", ms=2, alpha=0.4, label="camera")
+    a.set_aspect("equal"); a.set_title("Trajectoire (mm)"); a.legend(fontsize=7)
+    for i, (name, unit) in enumerate([("x", "mm"), ("y", "mm"), ("theta", "rad")]):
+        a = ax[(i + 1) // 3, (i + 1) % 3]
+        a.plot(t, err[:, i], lw=0.8)
+        a.fill_between(t, -3 * sig[:, i], 3 * sig[:, i], alpha=0.2, label="+-3 sigma (de P)")
+        a.set_title(f"Erreur sur {name} ({unit})"); a.set_xlabel("t (s)"); a.legend(fontsize=7)
+    from evaluation.metrics import nees
+    a = ax[1, 1]
+    a.plot(t, nees(err, run["P"]), lw=0.8)
+    a.axhline(3, color="g", ls=":", label="valeur attendue (3)")
+    a.set_title("NEES (chi2, 3 ddl)"); a.set_xlabel("t (s)"); a.legend(fontsize=7)
+    a = ax[1, 2]
+    nis = run["nis"]
+    a.plot(t, nis, ".", ms=3)
+    a.axhline(11.34, color="r", ls="--", label="seuil 99 % (11,34)")
+    a.axhline(3, color="g", ls=":", label="valeur attendue (3)")
+    a.set_title("NIS (chi2, 3 ddl)"); a.set_xlabel("t (s)"); a.legend(fontsize=7)
+    plt.tight_layout()
+    plt.savefig("docs/figures/validation_nominal.png", dpi=110)
+    plt.close()
 
-    truth = np.array(x0, dtype=float)
-    out = {k: [] for k in ("t", "truth", "u", "z", "visible", "est", "P", "nis", "used")}
-
-    def cam_visible(t, k):
-        if k % cam_every != 0:
-            return False
-        return not any(a <= t < b for a, b in hidden)
-
-    def measure(t, k):
-        if not cam_visible(t, k):
-            return PoseMeasurement(t=t, visible=False)
-        z = truth + rng.normal(0.0, sigma_cam)
-        return PoseMeasurement(t=t, visible=True, x=z[0], y=z[1], theta=wrap(z[2]))
-
-    # pas 0 : initialisation (la premiere mesure doit etre visible)
-    m = PoseMeasurement(t=0.0, visible=True,
-                        **dict(zip(("x", "y", "theta"), truth + rng.normal(0.0, sigma_cam))))
-    m.theta = wrap(m.theta)
-    node.on_measurement(m)
-    est = node.step(0.0)
-    _log(out, 0.0, truth, (0.0, 0.0), m, est, node)
-
-    for k, (v, w) in enumerate(commands, start=1):
-        t = k * ts
-        # commande appliquee entre t-ts et t, annoncee au filtre
-        node.on_control(ControlInput(t=t - ts, v=float(v), omega=float(w)))
-        # le vrai robot execute la commande + bruit
-        th = truth[2]
-        B = np.array([[np.cos(th) * ts, 0.0],
-                      [np.sin(th) * ts, 0.0],
-                      [0.0,             ts]])
-        noisy_u = np.array([v, w]) + rng.normal(0.0, Su)
-        truth = truth + B @ noisy_u + rng.normal(0.0, q_std)
-        truth[2] = wrap(truth[2])
-        m = measure(t, k)
-        node.on_measurement(m)
-        est = node.step(t)
-        _log(out, t, truth, (v, w), m, est, node)
-
-    return {k: np.array(v) for k, v in out.items()}
+    # ---- figure 2 : QR cache 5 s ----
+    run = simulate_and_filter(square_trajectory(), seed=1, hidden=[(10.0, 15.0)])
+    err = errors(run["truth"], run["est"])
+    sig = np.sqrt(np.array([np.diag(P) for P in run["P"]]))
+    fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+    ax[0].plot(run["t"], np.hypot(err[:, 0], err[:, 1]), label="erreur de position")
+    ax[0].plot(run["t"], 3 * np.hypot(sig[:, 0], sig[:, 1]) / np.sqrt(2), "--",
+               label="~3 sigma (de P)")
+    ax[0].axvspan(10, 15, alpha=0.15, color="gray", label="QR cache")
+    ax[0].set_xlabel("t (s)"); ax[0].set_ylabel("mm"); ax[0].legend(); ax[0].set_title("Position")
+    ax[1].plot(run["t"], np.degrees(np.abs(err[:, 2])), label="erreur d'angle")
+    ax[1].plot(run["t"], 3 * np.degrees(sig[:, 2]), "--", label="3 sigma (de P)")
+    ax[1].axvspan(10, 15, alpha=0.15, color="gray")
+    ax[1].set_xlabel("t (s)"); ax[1].set_ylabel("deg"); ax[1].legend(); ax[1].set_title("Angle")
+    plt.tight_layout()
+    plt.savefig("docs/figures/validation_qr_cache.png", dpi=110)
+    plt.close()
+    print("\nFigures sauvegardees dans docs/figures/")
 
 
-def _log(out, t, truth, u, m, est, node):
-    out["t"].append(t)
-    out["truth"].append(truth.copy())
-    out["u"].append(u)
-    out["z"].append([m.x, m.y, m.theta] if m.visible else [np.nan] * 3)
-    out["visible"].append(m.visible)
-    out["est"].append([est.x, est.y, est.theta])
-    out["P"].append(est.P)
-    out["nis"].append(np.nan if node.last_nis is None else node.last_nis)
-    out["used"].append(est.measurement_used)
+if __name__ == "__main__":
+    main()
