@@ -6,6 +6,8 @@ Commande du Thymio (tdmclient), suivi du chemin, évitement local des obstacles 
 
 | Fichier | Rôle |
 |---|---|
+| `main.py` | **Boucle principale du projet** : caméra → filtre (Matéo) → chemin (Robin) → suivi + évitement → moteurs. Gère le kidnapping (capteurs de sol), le QR caché, le replanning après un évitement. |
+| `fake_modules.py` | Fausse caméra et faux planificateur (mêmes structures que interfaces.py), en attendant les vrais modules. |
 | `messages.py` | **Seul fichier qui lit ou fabrique les structures de `interfaces.py`** : `PoseEstimate` → pose, `Path` → points, vitesses des roues → `ControlInput`, arrêt si kidnapping ou filtre trop incertain. |
 | `motion_model.py` | Valeurs mesurées du robot, conversion unités Thymio ↔ mm/s, cinématique, odométrie. |
 | `thymio.py` | Seul fichier qui parle au robot (tdmclient) : lire capteurs et vitesses, commander les moteurs et les LEDs. |
@@ -21,6 +23,8 @@ Tests : `tests/test_controle.py`.
 ## Lancer (depuis le dossier `projet_thymio/`)
 
 ```bash
+python -m controle.main --sim --plot data/main_sim.png # boucle complète simulée : obstacle, QR caché, kidnapping
+python -m controle.main --reel --goal 400 0            # vrai robot, sans caméra (le filtre ne fait que prédire)
 python -m controle.demo_mouvement --sim                # faux robot, un obstacle sur le premier côté
 python -m controle.demo_mouvement --sim --no-obstacle
 python -m controle.demo_mouvement --sim --plot data/trajectoire.png
@@ -30,6 +34,17 @@ pytest
 ```
 
 Résultat actuel en simulation : carré bouclé, obstacle contourné sans le toucher, fin à environ 1 cm du but. Rien n'est encore testé sur le vrai Thymio.
+
+## Brancher les vrais modules dans main.py
+
+Dans `main()`, deux lignes à changer quand les modules sont prêts :
+
+| Ligne actuelle | À remplacer par | Ce que la fonction doit faire |
+|---|---|---|
+| `vision = FakeCamera(...)` | la caméra de Sujith | `vision(t)` renvoie un `PoseMeasurement` : pose du **milieu de l'axe des roues** en mm et rad dans le repère monde, `t` = instant de capture, `visible=False` si le QR est caché |
+| `plan = straight_line_plan` | le planificateur de Robin | `plan(start, goal)` renvoie un `Path` : seulement les coins, marge comprise, `valid=False` si pas de chemin ; appelable depuis n'importe quelle position |
+
+Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. Après un kidnapping, `main.py` crée un nouveau `FilterNode`, qui se réinitialise sur la prochaine mesure caméra visible.
 
 ## Échanges avec les autres modules
 

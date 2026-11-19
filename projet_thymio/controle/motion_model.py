@@ -18,8 +18,8 @@ import math
 
 # --- Valeurs du robot (MESURER) -------------------------------------------------
 
-WHEEL_BASE_MM = 97.2        # mesuré : rotation sur place, 701° calculés avec 95 mm pour 685° réels
-SPEED_FACTOR = 0.353        # mesuré : 350 mm en 10,08 s à 98,4 unités mesurées (consigne 100), voir mesures_reelles.md
+WHEEL_BASE_MM = 96.5        # mesuré : rotation rapide sur place (±227 unités), 715° calculés avec 97,2 mm pour 720° réels
+SPEED_FACTOR = 0.337        # mesuré à la vitesse de croisière (80 mm/s) ; 0,353 à 35 mm/s : le facteur dépend de la vitesse, voir mesures_reelles.md
 LEFT_CORRECTION = 1.0       # mesuré : aucune déviation sur 35 cm en ligne droite
 WHEEL_SPEED_STD_MMS = 2.6   # mesuré : écart-type de la vitesse mesurée d'une roue, 7,5 unités à la consigne 100 (pour le filtre)
 

@@ -6,7 +6,9 @@ sleep, close) : on remplace l'un par l'autre sans toucher au reste du code.
 Ce qu'il simule (de façon grossière) :
     - la roue gauche un peu plus lente et du bruit sur les vitesses mesurées,
       pour que l'odométrie dérive comme sur le vrai robot ;
-    - les 5 capteurs avant, face à des obstacles ronds.
+    - les 5 capteurs avant, face à des obstacles ronds ;
+    - le kidnapping : lift() soulève le robot (capteurs de sol à ~20, il ne bouge
+      plus), put_down(pose) le repose ailleurs.
 Il ne remplace pas les essais sur le vrai robot.
 """
 
@@ -19,6 +21,7 @@ from controle.thymio import Reading
 LEFT_WHEEL_BIAS = 0.97        # la roue gauche va 3 % moins vite que la consigne
 WHEEL_NOISE_STD_MMS = 3.0
 GROUND_ON_PAPER = 900
+GROUND_LIFTED = 20            # mesuré : 15 à 63 selon la hauteur
 COMMAND_DELAY_STEPS = 3       # la consigne agit 3 pas plus tard (~0,3 s : communication + moteurs) ; reproduit le dépassement mesuré dans les virages
 
 PROX_ANGLES_RAD = (0.64, 0.32, 0.0, -0.32, -0.64)   # capteur 0 = avant gauche
@@ -51,13 +54,14 @@ class SimThymio:
         self._pending = []
         self._measured = (0.0, 0.0)
         self._rng = random.Random(seed)
+        self.lifted = False
 
     def read(self):
         return Reading(
             v_left=self._measured[0],
             v_right=self._measured[1],
             prox=self._prox_values(),
-            ground=[GROUND_ON_PAPER, GROUND_ON_PAPER],
+            ground=[GROUND_LIFTED] * 2 if self.lifted else [GROUND_ON_PAPER] * 2,
         )
 
     def set_motors(self, v_left, v_right):
@@ -75,8 +79,9 @@ class SimThymio:
         """Fait avancer le monde de dt secondes."""
         real_left = self._cmd[0] * LEFT_WHEEL_BIAS
         real_right = self._cmd[1]
-        x, y, th = self.true_pose
-        self.true_pose = motion_model.odometry_step(x, y, th, real_left, real_right, dt)
+        if not self.lifted:                    # en l'air, les roues tournent dans le vide
+            x, y, th = self.true_pose
+            self.true_pose = motion_model.odometry_step(x, y, th, real_left, real_right, dt)
         # Le robot mesure ses vitesses avec du bruit.
         self._measured = (
             real_left + self._rng.gauss(0.0, WHEEL_NOISE_STD_MMS),
@@ -86,6 +91,15 @@ class SimThymio:
 
     def close(self):
         self._cmd = (0.0, 0.0)
+
+    def lift(self):
+        """Kidnapping : on soulève le robot."""
+        self.lifted = True
+
+    def put_down(self, pose):
+        """Kidnapping : on repose le robot à `pose` (x, y, theta)."""
+        self.true_pose = tuple(pose)
+        self.lifted = False
 
     def collides(self):
         """Vrai si le robot (rayon environ 60 mm) touche un obstacle."""

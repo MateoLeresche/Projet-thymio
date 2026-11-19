@@ -64,3 +64,15 @@ def test_messages():
     assert messages.path_points(Path(t=0.0, waypoints=[], valid=False)) is None
     u = messages.control_input(1.0, 40.0, 60.0)
     assert math.isclose(u.v, 50.0) and math.isclose(u.omega, 20.0 / motion_model.WHEEL_BASE_MM)
+
+
+def test_main_loop_simulated():
+    """Boucle complète en simulation : obstacle imprévu, QR caché 3 s, kidnapping."""
+    from controle import main
+    robot = SimThymio(start_pose=main.SIM_START, obstacles=[main.SIM_OBSTACLE], seed=1)
+    vision = main.FakeCamera(robot, hidden=main.SIM_HIDDEN)
+    log = main.run(robot, vision, main.straight_line_plan, main.SIM_GOAL, lambda: robot.t, robot, main.sim_scenario)
+    x, y, _ = robot.true_pose
+    assert math.hypot(x - main.SIM_GOAL[0], y - main.SIM_GOAL[1]) < 40.0
+    assert not robot.collides()
+    assert any(pose is None for _, pose, _ in log)          # arrêté pendant le kidnapping

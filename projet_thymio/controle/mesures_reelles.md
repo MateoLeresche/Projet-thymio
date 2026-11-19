@@ -175,3 +175,58 @@ Choix : PROX_ENTER reste à 2400.
 | Capteur avant gauche max | 4955 | 4812 |
 
 Le robot réagit plus vite et pivote moins. Il passe encore près du gobelet par son coin avant gauche (le gobelet glisse sur le côté pendant qu'il tourne).
+
+## Boucle principale (main.py) sur le vrai robot, sans caméra
+
+Le filtre de Matéo reçoit seulement la pose de départ, puis prédit avec les vitesses mesurées des roues (aucune correction caméra). But : 400 mm tout droit, V_MAX = 80 mm/s.
+
+| | Estimé par le filtre | Mesuré à la règle |
+|---|---|---|
+| Distance parcourue | 388 mm | 370 mm |
+| Écart sur le côté | 1 mm à gauche | 10 mm à droite |
+
+- Erreur de la prédiction seule : environ 2 cm sur 37 cm (≈ 5 %). Le filtre surestime la distance de 18 mm.
+- Piste : `SPEED_FACTOR` a été mesuré à la consigne 100 (≈ 35 mm/s), alors que le robot roule ici à 80 mm/s (≈ 227 unités). Le facteur dépend peut-être de la vitesse : à refaire à la vitesse d'utilisation.
+
+## Boucle principale (main.py) sur le vrai robot, sans caméra, câble de charge débranché
+
+Le filtre de Matéo reçoit la pose de départ une seule fois puis ne fait que prédire avec les vitesses mesurées. But : 400 mm tout droit.
+
+| | Estimé par le filtre | Mesuré à la règle |
+|---|---|---|
+| Distance parcourue | 388 mm | 370 mm |
+| Déviation latérale | 1 mm à gauche | 5 mm à droite |
+| Durée | 5,2 s | |
+
+Le filtre surestime la distance d'environ 5 %. Le câble n'était pas branché pendant les calibrations, ce n'est donc pas lui. Piste suivante : le facteur 0,353 a été mesuré à la consigne 100 (35 mm/s), alors que le robot roule à 80 mm/s (≈ 227 unités) dans main.py. Si la mesure de vitesse du Thymio n'est pas proportionnelle à la vraie vitesse, le facteur change avec la vitesse. À vérifier : ligne droite à 227 unités.
+
+## Ligne droite à la vitesse de croisière (consigne 227 unités ≈ 80 mm/s, 4,56 s)
+
+| Mesure | Valeur |
+|---|---|
+| Vitesse mesurée | gauche 225,1 ± 15,8, droite 224,9 ± 14,0 unités |
+| Distance (règle) | 337 mm |
+| Facteur brut | 337 / 4,56 / 225 = **0,329** mm/s par unité (démarrage compté comme s'il était à pleine vitesse, donc un peu sous-estimé) |
+| Facteur d'après le test de main.py | 0,353 × 370 / 388 = **0,337** |
+
+Le facteur dépend de la vitesse : 0,353 à 35 mm/s, environ 0,33 à 0,34 à 80 mm/s. Le bruit d'une roue aussi : 2,6 mm/s à 35 mm/s, environ 5 mm/s à 80 mm/s.
+
+## Rotation rapide (consigne -227 / +227 unités, 8 s), avec le facteur 0,337
+
+| Mesure | Valeur |
+|---|---|
+| Vitesse mesurée | gauche -227,8 ± 15,4, droite 230,7 ± 15,5 unités |
+| Angle calculé (empattement 97,2 mm) | 715° |
+| Angle réel (photo : l'avant du robot est dans l'axe du bâtonnet, à 1° près) | 720° ± 2° |
+
+- `WHEEL_BASE_MM` = 97,2 × 715 / 720 = **96,5 mm**.
+- Valeurs retenues (vitesse de croisière) : facteur **0,337**, empattement **96,5 mm**, bruit d'une roue **≈ 5 mm/s**.
+
+## Boucle principale sans caméra, après recalibration à 80 mm/s (facteur 0,337, empattement 96,5 mm)
+
+| | Estimé par le filtre | Mesuré à la règle |
+|---|---|---|
+| Distance | 388 mm | 390 mm |
+| Déviation latérale | 0 mm | 0 mm |
+
+Erreur de l'odométrie seule sur 40 cm : **2 mm (0,5 %)**, contre 18 mm (5 %) avec le facteur mesuré à 35 mm/s.
