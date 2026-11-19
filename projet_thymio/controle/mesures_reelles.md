@@ -52,7 +52,7 @@ Les valeurs ne descendent pas sous ~1500 : en dessous, le capteur renvoie direct
 | Soulevé d'environ 10 cm | 24 | 15 |
 
 Le capteur droit lit environ 35 % de moins que le gauche sur la même surface.
-Seuil `GROUND_LIFTED_THRESHOLD = 100` : entre « soulevé de 5 cm » (≤ 63) et « posé » (≥ 588). Soulevé de moins de 5 cm, le robot peut ne pas être détecté. À vérifier sur du noir.
+Seuil `GROUND_LIFTED_THRESHOLD = 100` : entre "soulevé de 5 cm" (≤ 63) et "posé" (≥ 588). Soulevé de moins de 5 cm, le robot peut ne pas être détecté. À vérifier sur du noir.
 
 ## Ligne droite (consigne 100 / 100 unités, 10 s, câble lâche)
 
@@ -130,7 +130,7 @@ Réglages : PROX_ENTER 2400, K_PROX 0,03, CLEAR_DISTANCE 200 mm, K_ALPHA 2.
 - Il est ainsi arrivé dans les objets posés à droite de la table : plusieurs évitements à la suite, carré non terminé en 60 s (data/reel/carre_obstacle.json, .png).
 - Cause : le retard entre la commande et le mouvement du vrai robot (communication + moteurs). Le simulateur l'ignorait.
   Avec un retard de 3 pas (0,3 s), le simulateur reproduit le dépassement mesuré dans les virages (K = 3 : +26° simulé contre +30 à +52° réels ; K = 2 : +17° contre +14 à +28°) et les ~23 cm d'écart de l'évitement.
-- Correction : CLEAR_DISTANCE 200 → 100 mm. En simulation (avec retard, 15 positions et tailles d'obstacle) : écart latéral moyen 242 → 160 mm, même marge minimale, même nombre de contacts (1 cas limite : gobelet étroit décalé de 2 cm, vu tard parce qu'il passe entre deux capteurs).
+- Correction : CLEAR_DISTANCE 200 -> 100 mm. En simulation (avec retard, 15 positions et tailles d'obstacle) : écart latéral moyen 242 -> 160 mm, même marge minimale, même nombre de contacts (1 cas limite : gobelet étroit décalé de 2 cm, vu tard parce qu'il passe entre deux capteurs).
 
 ### 2e essai (CLEAR_DISTANCE 100 mm, K_PROX 0,03)
 
@@ -144,7 +144,7 @@ Pivot d'environ 128° devant le gobelet, retour vers le chemin qui repasse près
 | Évitements | 2 (le robot revoit le gobelet en revenant vers le chemin, l'évite une 2e fois) |
 | Écart latéral maximal | 14 cm |
 | Rotation au 1er évitement | jusqu'à -116° (dont ~25° après que plus aucun capteur ne voit le gobelet : retard) |
-| Capteurs (data/reel/carre_obstacle_kp015_prox.json) | milieu : 1528 → 3431 en approchant ; puis le gobelet passe sur les capteurs gauches (prox[1] 4371, prox[0] 4955 = très proche du coin avant gauche) |
+| Capteurs (data/reel/carre_obstacle_kp015_prox.json) | milieu : 1528 -> 3431 en approchant ; puis le gobelet passe sur les capteurs gauches (prox[1] 4371, prox[0] 4955 = très proche du coin avant gauche) |
 
 Choix : K_PROX = 0,015.
 
@@ -171,7 +171,7 @@ Choix : PROX_ENTER reste à 2400.
 | Évitements | 2 | 2 |
 | Écart latéral max | 142 mm | 133 mm |
 | Rotation max au 1er évitement | -116° | -84° |
-| Délai déclenchement → début du virage | ~0,5 s | ~0,2 s |
+| Délai déclenchement -> début du virage | ~0,5 s | ~0,2 s |
 | Capteur avant gauche max | 4955 | 4812 |
 
 Le robot réagit plus vite et pivote moins. Il passe encore près du gobelet par son coin avant gauche (le gobelet glisse sur le côté pendant qu'il tourne).

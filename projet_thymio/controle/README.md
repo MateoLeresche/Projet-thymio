@@ -1,81 +1,72 @@
 # Module contrôle (Matthieu)
 
-Commande du Thymio (tdmclient), suivi du chemin, évitement local des obstacles imprévus.
+Ici il y a tout ce qui fait bouger le Thymio : la communication avec le robot, le suivi du chemin, l'évitement des obstacles imprévus, et la boucle principale qui relie tous les modules.
 
-## Fichiers
+Tout a été testé sur le vrai robot (sauf la partie caméra, en attendant celle de Sujith). Les mesures et les essais sont dans `mesures_reelles.md`.
 
-| Fichier | Rôle |
+## Les fichiers
+
+| Fichier | À quoi il sert |
 |---|---|
-| `main.py` | **Boucle principale du projet** : caméra → filtre (Matéo) → chemin (Robin) → suivi + évitement → moteurs. Gère le kidnapping (capteurs de sol), le QR caché, le replanning après un évitement. |
-| `fake_modules.py` | Fausse caméra et faux planificateur (mêmes structures que interfaces.py), en attendant les vrais modules. |
-| `messages.py` | **Seul fichier qui lit ou fabrique les structures de `interfaces.py`** : `PoseEstimate` → pose, `Path` → points, vitesses des roues → `ControlInput`, arrêt si kidnapping ou filtre trop incertain. |
-| `motion_model.py` | Valeurs mesurées du robot, conversion unités Thymio ↔ mm/s, cinématique, odométrie. |
-| `thymio.py` | Seul fichier qui parle au robot (tdmclient) : lire capteurs et vitesses, commander les moteurs et les LEDs. |
-| `controller.py` | Suivi du chemin, loi fluide du cours (Astolfi adapté : rotation ∝ α, avance ∝ cos α, ralentissement à l'arrivée). |
-| `local_avoidance.py` | Évitement des obstacles vus par les capteurs infrarouges (Braitenberg). |
-| `calibration.py` | Mesures sur le vrai robot pour remplir les valeurs MESURER. |
-| `simulator.py` | Faux Thymio, pour tester sans robot. |
-| `demo_mouvement.py` | Suit un carré de 40 cm avec évitement, position par odométrie seule. Modèle de la boucle principale. |
-| `comparaison_controleurs.svg` | Ancienne loi (pivoter puis avancer) contre loi fluide, en simulation. Pour le rapport. |
+| `main.py` | La boucle principale du projet : caméra, filtre de Matéo, chemin de Robin, suivi + évitement, moteurs. Elle gère aussi le kidnapping, le QR caché et le nouveau chemin après un évitement. |
+| `fake_modules.py` | Une fausse caméra et un faux planificateur, en attendant les vrais. Ils renvoient les mêmes structures que `interfaces.py`. |
+| `messages.py` | Le seul fichier qui lit ou fabrique les structures de `interfaces.py` (PoseEstimate, Path, ControlInput). |
+| `motion_model.py` | Les valeurs mesurées du robot, la conversion unités Thymio / mm/s, l'odométrie. |
+| `thymio.py` | Le seul fichier qui parle au robot (tdmclient). |
+| `controller.py` | Le suivi du chemin avec la loi fluide du cours (Astolfi adapté). |
+| `local_avoidance.py` | L'évitement des obstacles vus par les capteurs infrarouges (Braitenberg). |
+| `simulator.py` | Un faux Thymio pour tester sans le robot. |
+| `demo_mouvement.py` | Le carré de 40 cm avec évitement, utilisé pour régler les virages et l'évitement. |
+| `calibration.py` | Les mesures à faire sur le robot (vitesse, rotation, capteurs). |
+| `mesures_reelles.md` | Le journal de tous les essais sur le vrai robot, avec les chiffres (pour le rapport). |
 
-Tests : `tests/test_controle.py`.
+Les tests sont dans `tests/test_controle.py`.
 
 ## Lancer (depuis le dossier `projet_thymio/`)
 
 ```bash
-python -m controle.main --sim --plot data/main_sim.png # boucle complète simulée : obstacle, QR caché, kidnapping
-python -m controle.main --reel --goal 400 0            # vrai robot, sans caméra (le filtre ne fait que prédire)
-python -m controle.demo_mouvement --sim                # faux robot, un obstacle sur le premier côté
-python -m controle.demo_mouvement --sim --no-obstacle
-python -m controle.demo_mouvement --sim --plot data/trajectoire.png
-python -m controle.demo_mouvement                      # vrai Thymio, posé au départ du carré, regardant vers +x
-python -m controle.calibration vitesse                 # puis rotation, prox, sol
+python -m controle.main --sim --plot data/main_sim.png   # tout simulé : obstacle, QR caché, kidnapping
+python -m controle.main --reel --goal 400 0              # vrai robot sans caméra, 40 cm tout droit
+python -m controle.demo_mouvement --sim                  # carré de 40 cm sur le faux robot
+python -m controle.calibration vitesse                   # puis rotation, prox, sol
 pytest
 ```
 
-Résultat actuel en simulation : carré bouclé, obstacle contourné sans le toucher, fin à environ 1 cm du but. Rien n'est encore testé sur le vrai Thymio.
+Il faut `tdmclient` pour le vrai robot (`pip install tdmclient`) et Thymio Suite ouvert, sans ouvrir de langage dedans (sinon il bloque le robot).
 
-## Brancher les vrais modules dans main.py
+## Brancher vos modules dans main.py
 
-Dans `main()`, deux lignes à changer quand les modules sont prêts :
+Dans `main()` il y a deux lignes à changer quand vos modules sont prêts :
 
 | Ligne actuelle | À remplacer par | Ce que la fonction doit faire |
 |---|---|---|
-| `vision = FakeCamera(...)` | la caméra de Sujith | `vision(t)` renvoie un `PoseMeasurement` : pose du **milieu de l'axe des roues** en mm et rad dans le repère monde, `t` = instant de capture, `visible=False` si le QR est caché |
-| `plan = straight_line_plan` | le planificateur de Robin | `plan(start, goal)` renvoie un `Path` : seulement les coins, marge comprise, `valid=False` si pas de chemin ; appelable depuis n'importe quelle position |
+| `vision = FakeCamera(...)` | la caméra de Sujith | `vision(t)` renvoie un `PoseMeasurement` : la position du **milieu entre les deux roues** (pas le centre du QR) en mm et rad dans le repère de la carte, `t` = moment où l'image a été prise, `visible=False` si le QR est caché |
+| `plan = straight_line_plan` | le planificateur de Robin | `plan(start, goal)` renvoie un `Path` : seulement les coins du chemin, marge comprise, `valid=False` s'il n'y a pas de chemin. Il faut pouvoir l'appeler depuis n'importe quelle position (on recalcule après un évitement ou un kidnapping). |
 
-Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. Après un kidnapping, `main.py` crée un nouveau `FilterNode`, qui se réinitialise sur la prochaine mesure caméra visible.
+Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. À chaque pas, `main.py` fait `on_control`, puis `on_measurement`, puis `step(time.monotonic())`. Après un kidnapping, on crée un nouveau `FilterNode`, qui reprend la position de la prochaine image de la caméra.
 
-## Échanges avec les autres modules
+## Pour chacun
 
-| Avec | Structure | Utilisation ici |
-|---|---|---|
-| Filtre (Matéo) → moi | `PoseEstimate` | `messages.pose_tuple(est)` pour suivre le chemin ; `messages.must_stop(est)` arrête le robot si `kidnapped` ou si l'écart-type de position dépasse `POSITION_STD_MAX_MM` (50 mm, à confirmer). |
-| Moi → filtre | `ControlInput` | `messages.control_input(t, v_left, v_right)` avec les vitesses **mesurées** (`Thymio().read()`), pas les consignes : pendant un évitement, c'est ce que le robot fait vraiment. |
-| Planification (Robin) → moi | `Path` | `messages.path_points(path)` ; `None` si `valid=False` : le robot ne bouge pas. Puis `follower.set_path(points)`. |
+**Matéo** : je t'envoie la vitesse **mesurée** des roues dans `ControlInput` (c'est ce que le robot fait vraiment, même pendant un évitement). Le robot avance et tourne en même temps (loi fluide), ta prédiction marche aussi avec ça. Valeurs mesurées à 80 mm/s : facteur 0,337, empattement 96,5 mm, sigma_v environ 3,5 mm/s, sigma_w environ 0,07 rad/s. Avec ça ton filtre se trompe de 2 mm sur 40 cm sans caméra.
 
-**Pour Robin** : seulement les coins du chemin (pas chaque case de la grille, sinon le robot zigzague). Dans les virages, le robot coupe d'environ 1 à 2 cm : à compter dans la marge. Il faut une fonction qu'on peut rappeler depuis n'importe quelle position, pour replanifier après un évitement ou un kidnapping.
+**Robin** : la marge autour des obstacles doit faire au moins 8 cm (le robot fait 11 cm de large et il coupe un peu les virages, environ 1,5 cm). Envoie seulement les coins, pas chaque case de la grille, sinon le robot zigzague.
 
-**Pour Matéo** : la loi fluide fait des trajectoires courbes (v et ω non nuls en même temps), alors que le contrat (section 3) dit « translation pure ou rotation sur place ». Ta prédiction `x += v·cos θ·dt, y += v·sin θ·dt, θ += ω·dt` marche aussi pour les courbes. Simulation (20 essais, carré de 40 cm, caméra bruitée à 2 mm, QR caché 4 s) : erreur moyenne du filtre 1,0 mm, erreur maximale pendant que le QR est caché 5,5 mm, contre 1,0 et 4,8 mm avec l'ancienne loi. Si on garde quand même la règle du contrat : `CONTROL_LAW = "turn_then_go"` dans `controller.py`.
+**Sujith** : la position doit être celle du milieu entre les roues (le trou au centre du robot, là où on met un feutre), pas le centre du QR. `thymio.is_lifted(lecture)` dit si le robot est soulevé, ça peut t'aider pour le kidnapping.
 
-**Pour Sujith** : `thymio.is_lifted(lecture)` dit si les capteurs de sol ne voient plus le sol (robot soulevé), pour aider à détecter le kidnapping.
+## Valeurs mesurées (détails dans mesures_reelles.md)
 
-## Valeurs à mesurer (MESURER dans le code)
+| Valeur | Où | Combien | Comment |
+|---|---|---|---|
+| Facteur Thymio vers mm/s | motion_model.py | 0,337 | ligne droite à 80 mm/s |
+| Empattement | motion_model.py | 96,5 mm | 2 tours sur place, photo |
+| Gain de rotation K_ALPHA | controller.py | 3 | carrés avec 1,5, 2 et 3 |
+| Seuil d'évitement | local_avoidance.py | 2400 (environ 8 cm) | courbe du capteur avec une boîte blanche |
+| Force du virage K_PROX | local_avoidance.py | 0,015 | essais avec un gobelet |
+| Seuil robot soulevé | thymio.py | 100 | capteurs de sol posé et soulevé |
 
-À reporter aussi dans le journal de calibration de `docs/CONTRAT_INTERFACES.md` (méthode et date).
+## Pour la démo
 
-| Valeur | Fichier | Mesure |
-|---|---|---|
-| `SPEED_FACTOR` (facteur Thymio → mm/s) | motion_model.py | `calibration vitesse` |
-| `LEFT_CORRECTION` | motion_model.py | `calibration vitesse` (déviation en ligne droite) |
-| `WHEEL_SPEED_STD_MMS` | motion_model.py | `calibration vitesse` (sert à Matéo pour σ_v, σ_ω) |
-| `WHEEL_BASE_MM` (empattement L) | motion_model.py | `calibration rotation` |
-| `PROX_ENTER`, `PROX_EXIT` | local_avoidance.py | `calibration prox` |
-| `GROUND_LIFTED_THRESHOLD` | thymio.py | `calibration sol` |
-| `K_ALPHA`, `V_MAX`, `K_RHO` | controller.py | Essais sur le vrai robot (noter les trajectoires pour le rapport) |
-
-## Règles pour la démo
-
-- Les obstacles posés pendant la démo doivent être **clairs et hauts d'au moins 5 cm** : le noir absorbe l'infrarouge.
-- La carte est faite **une seule fois au démarrage**, sinon la caméra ajoute l'obstacle posé à la carte et on ne voit plus l'évitement local.
-- Ne pas poser un obstacle à moins d'environ 15 cm d'un point de passage : le robot ne peut pas l'atteindre sans le toucher.
+- Les obstacles ajoutés doivent être **clairs et hauts d'au moins 5 cm** (le noir renvoie mal l'infrarouge).
+- La carte est faite **une seule fois au début**, sinon la caméra ajoute l'obstacle à la carte et on ne voit plus l'évitement.
+- Pas d'obstacle à moins de 15 cm d'un coin du chemin.
+- Débrancher le câble de charge pendant les essais, il fausse la vitesse mesurée.

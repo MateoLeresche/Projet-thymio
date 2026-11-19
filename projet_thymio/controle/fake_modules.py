@@ -1,11 +1,10 @@
-"""Faux modules caméra et planification, pour tester la boucle principale
-avant que ceux de Sujith et Robin soient prêts.
+"""Fausse caméra et faux planificateur, pour tester main.py en attendant ceux de Sujith et Robin.
 
-Ils renvoient exactement les structures de interfaces.py : le jour où les vrais
-modules sont prêts, on les branche à la place dans main.py sans rien changer d'autre.
+Ils renvoient exactement les mêmes structures que interfaces.py, donc le jour où
+les vrais sont prêts on les met à la place dans main.py et le reste ne change pas.
 
-    vision(t)          -> PoseMeasurement   (comme le fera le module de Sujith)
-    plan(start, goal)  -> Path              (comme le fera le module de Robin)
+    vision(t) donne un PoseMeasurement (comme fera la caméra de Sujith)
+    plan(start, goal) donne un Path (comme fera le planificateur de Robin)
 """
 
 import random
@@ -13,14 +12,14 @@ import random
 from interfaces import Path, PoseMeasurement
 from controle import motion_model
 
-CAMERA_STD = (2.0, 2.0, 0.02)   # mm, mm, rad : bruit de la fausse caméra (même ordre que filtre/params.py)
+CAMERA_STD = (2.0, 2.0, 0.02)   # bruit de la fausse caméra : 2 mm, 2 mm et 0,02 rad
 
 
 class FakeCamera:
-    """Caméra simulée : lit la vraie position du robot dans le simulateur et ajoute du bruit.
+    """Caméra pour le simulateur : on prend la vraie position du robot et on ajoute du bruit.
 
-    hidden : liste d'intervalles (t_début, t_fin) en s pendant lesquels le QR code est caché.
-    Robot soulevé (kidnapping) : la caméra ne le voit pas non plus.
+    hidden : périodes (début, fin) en secondes où le QR code est caché.
+    Si le robot est soulevé (kidnapping), la caméra ne le voit pas non plus.
     """
 
     def __init__(self, sim, hidden=(), seed=0):
@@ -30,7 +29,7 @@ class FakeCamera:
 
     def __call__(self, t):
         if self.sim.lifted or any(t0 <= t < t1 for t0, t1 in self.hidden):
-            return PoseMeasurement(t=t, visible=False)
+            return PoseMeasurement(t=t, visible=False)   # QR pas visible
         x, y, theta = self.sim.true_pose
         sx, sy, st = CAMERA_STD
         return PoseMeasurement(
@@ -42,8 +41,10 @@ class FakeCamera:
 
 
 class StartOnlyCamera:
-    """Pour le vrai robot sans caméra : donne la position de départ une seule fois,
-    puis « QR caché » pour toujours. Le filtre ne fait alors que prédire (odométrie)."""
+    """Pour le vrai robot sans caméra : donne la position de départ une fois, puis plus rien.
+
+    Le filtre ne fait alors que prédire avec la vitesse des roues (de l'odométrie).
+    """
 
     def __init__(self, start_pose):
         self.start_pose = start_pose
@@ -58,5 +59,5 @@ class StartOnlyCamera:
 
 
 def straight_line_plan(start, goal):
-    """Faux planificateur : ligne droite du départ au but (carte sans obstacle connu)."""
+    """Faux planificateur : ligne droite du robot jusqu'au but (comme si la carte était vide)."""
     return Path(t=0.0, waypoints=[tuple(start[:2]), tuple(goal)], valid=True)

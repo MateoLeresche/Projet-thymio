@@ -1,18 +1,17 @@
-"""Test du mouvement seul : suivre des points écrits à la main, avec évitement.
+"""Test du mouvement tout seul : le robot fait un carré de 40 cm, avec l'évitement.
 
-Pas besoin de caméra ni de filtre : la position vient de l'odométrie seule
-(motion_model.odometry_step). C'est aussi le squelette de la boucle principale
-du projet : il suffira de remplacer l'odométrie par la pose du filtre et le
-chemin écrit à la main par celui de la planification.
+Pas besoin de caméra ni de filtre, la position vient juste de l'odométrie
+(motion_model.odometry_step). C'est ce script qu'on a utilisé pour régler les
+virages et l'évitement. La vraie boucle du projet c'est main.py.
 
     (depuis le dossier projet_thymio/)
-    python -m controle.demo_mouvement --sim              # faux robot, avec un obstacle rond
+    python -m controle.demo_mouvement --sim              # faux robot avec un obstacle rond
     python -m controle.demo_mouvement --sim --no-obstacle
     python -m controle.demo_mouvement --sim --plot data/trajectoire.png
     python -m controle.demo_mouvement                    # vrai Thymio (posé à l'origine, regardant vers +x)
 
-Sur le vrai robot, l'odométrie seule dérive : quelques cm d'erreur à la fin
-d'un carré de 40 cm sont normaux. C'est justement ce que le filtre corrigera.
+Sur le vrai robot l'odométrie toute seule se trompe un peu : quelques cm à la
+fin du carré c'est normal, c'est ce que la caméra et le filtre vont corriger.
 """
 
 import argparse
@@ -23,16 +22,16 @@ from controle import controller
 from controle import local_avoidance
 from controle import motion_model
 
-DT = 0.1                      # s, une itération toutes les 0,1 s
-MAX_TIME = 60.0               # s, sécurité
+DT = 0.1                      # un tour de boucle toutes les 0,1 s
+MAX_TIME = 60.0               # au bout de 60 s on arrête, au cas où
 
-# Carré de 40 cm, parcouru dans le sens trigonométrique, retour au départ.
+# carré de 40 cm, on tourne à gauche à chaque coin et on revient au départ
 PATH = [(0.0, 0.0), (400.0, 0.0), (400.0, 400.0), (0.0, 400.0), (0.0, 0.0)]
-# Obstacle rond (x, y, rayon) posé sur le premier côté, pour la simulation.
+# obstacle rond (x, y, rayon) sur le premier côté, pour la simulation
 SIM_OBSTACLE = (200.0, 10.0, 30.0)
 
 LED_FOLLOW = (0, 0, 32)       # bleu : suit le chemin
-LED_AVOID = (32, 12, 0)       # orange : évite
+LED_AVOID = (32, 12, 0)       # orange : évite un obstacle
 LED_DONE = (0, 32, 0)         # vert : arrivé
 
 
@@ -48,19 +47,17 @@ def run(robot, path, sim=None):
     last = time.monotonic()
     while t < MAX_TIME:
         start = time.monotonic()
-        # Durée RÉELLE depuis la lecture précédente : sur le vrai robot, un pas
-        # peut durer plus que DT (communication). Avec DT fixe, l'odométrie
-        # sous-estimait distances et angles d'un facteur 2 (mesuré : 212 ms par pas).
+        # on prend le vrai temps écoulé depuis le dernier tour, pas 0,1 s pile :
+        # au début un tour prenait 0,21 s et le robot comptait 2 fois trop peu de distance
         dt = DT if sim is not None else start - last
         last = start
 
-        # 1. Lire le robot et mettre à jour la pose (ici : odométrie seule).
+        # 1. on lit le robot et on met à jour sa position avec l'odométrie
         reading = robot.read()
         pose = motion_model.odometry_step(*pose, reading.v_left, reading.v_right, dt)
 
-        # 2. Décider. Le suivi du chemin tourne toujours (il passe les points
-        #    atteints, même pendant un évitement) ; l'évitement remplace sa
-        #    commande quand un obstacle est là.
+        # 2. on décide : le suivi du chemin tourne toujours (comme ça il saute les points
+        #    déjà atteints), mais si un obstacle est là c'est l'évitement qui commande
         v_left, v_right, done = follower.update(pose)
         if done:
             robot.set_motors(0.0, 0.0)
@@ -79,11 +76,10 @@ def run(robot, path, sim=None):
             led = LED_AVOID
             if finished:
                 avoiding = False
-                # Dans le projet : redemander un chemin à la planification ici,
-                # depuis `pose`, puis follower.set_path(nouveau_chemin).
+                # dans main.py on redemande un chemin ici, depuis la position actuelle
                 print(f"t={t:5.1f}s  obstacle dépassé -> retour au chemin")
 
-        # 3. Agir.
+        # 3. on envoie les vitesses au robot
         robot.set_motors(v_left, v_right)
         robot.set_leds(*led)
 
@@ -93,7 +89,7 @@ def run(robot, path, sim=None):
         else:
             trajectory.append((pose, None))
 
-        # 4. Attendre la fin du pas (le simulateur avance de DT d'un coup).
+        # 4. on attend la fin du tour de 0,1 s (le simulateur avance de 0,1 s d'un coup)
         robot.sleep(DT if sim is not None else max(DT - (time.monotonic() - start), 0.001))
         t += dt
 

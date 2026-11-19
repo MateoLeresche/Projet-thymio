@@ -1,4 +1,4 @@
-"""Mesures pour remplir les valeurs MESURER de motion_model.py, thymio.py et local_avoidance.py.
+"""Les mesures à faire sur le vrai robot pour régler motion_model.py, thymio.py et local_avoidance.py.
 
     python -m controle.calibration vitesse    # SPEED_FACTOR, LEFT_CORRECTION, WHEEL_SPEED_STD_MMS
     python -m controle.calibration rotation   # WHEEL_BASE_MM
@@ -7,8 +7,11 @@
 
 À lancer depuis le dossier projet_thymio/.
 
-Faire chaque mesure 3 fois et garder la moyenne. Noter les résultats : ils vont
-dans le rapport (le prof pénalise les valeurs prises sans mesure).
+Faire chaque mesure plusieurs fois et garder la moyenne. Noter les résultats
+dans mesures_reelles.md, ils vont dans le rapport (le prof veut des valeurs mesurées).
+
+La vitesse et la rotation se mesurent à la vitesse où le robot roule vraiment
+(environ 80 mm/s, soit 227 unités) : on a vu que le facteur change avec la vitesse.
 """
 
 import math
@@ -22,20 +25,20 @@ DT = 0.1
 
 
 def measure_speed(robot):
-    units, duration = 100, 10.0
+    units, duration = 227, 4.5   # 227 unités = environ 80 mm/s, ça fait environ 35 cm
     input(f"Marquer la position de départ du robot (avant de la coque), puis Entrée. "
-          f"Il va avancer {duration:.0f} s à la consigne {units}.")
+          f"Il va avancer {duration:.1f} s à la consigne {units}.")
     left, right = [], []
     robot.set_motor_units(units, units)
     for _ in range(int(duration / DT)):
         robot.sleep(DT)
         r = robot.read()
-        left.append(r.v_left / motion_model.SPEED_FACTOR)    # unités Thymio brutes
+        left.append(r.v_left / motion_model.SPEED_FACTOR)    # on remet en unités Thymio
         right.append(r.v_right / motion_model.SPEED_FACTOR)
     robot.set_motor_units(0, 0)
 
     distance = float(input("Distance parcourue en mm ? "))
-    mean_units = statistics.mean(left[5:] + right[5:])        # sans le démarrage
+    mean_units = statistics.mean(left[5:] + right[5:])        # on enlève le démarrage (les 5 premières mesures)
     factor = distance / duration / mean_units
     std_units = statistics.mean([statistics.stdev(left[5:]), statistics.stdev(right[5:])])
     print(f"\nvitesse mesurée moyenne : {mean_units:.1f} unités pour une consigne de {units}")
@@ -46,10 +49,10 @@ def measure_speed(robot):
 
 
 def measure_rotation(robot):
-    units, duration = 80, 8.0
+    units, duration = 227, 8.0   # environ 2 tours
     input(f"Marquer l'orientation du robot (trait au sol), puis Entrée. "
           f"Il va tourner sur place {duration:.0f} s.")
-    theta = 0.0   # angle calculé avec WHEEL_BASE_MM actuel, sans le ramener entre -pi et pi
+    theta = 0.0   # angle calculé avec l'empattement actuel (on ne le remet pas entre -pi et pi pour compter les tours)
     robot.set_motor_units(-units, units)
     for _ in range(int(duration / DT)):
         robot.sleep(DT)

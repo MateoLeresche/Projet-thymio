@@ -1,23 +1,23 @@
-"""Boucle principale du projet : caméra -> filtre -> chemin -> suivi + évitement -> moteurs.
+"""Boucle principale du projet : caméra, filtre, chemin, suivi + évitement, moteurs.
 
-À chaque pas (0,1 s) :
-    1. lire le robot ; s'il est soulevé (kidnapping), l'arrêter, et une fois reposé
-       repartir de zéro (nouveau filtre, nouveau chemin) ;
-    2. filtre de Kalman (Matéo) : commande des roues + mesure caméra -> pose estimée ;
-       arrêt si le filtre n'a pas encore de position ou devient trop incertain ;
-    3. demander un chemin (Robin) au départ, après un évitement ou un kidnapping ;
-    4. suivre le chemin, ou éviter un obstacle vu par les capteurs infrarouges ;
-    5. envoyer les vitesses aux moteurs.
+À chaque pas (toutes les 0,1 s) :
+    1. on lit le robot. S'il est soulevé (kidnapping) on l'arrête, et quand il est
+       reposé on repart de zéro (nouveau filtre, nouveau chemin)
+    2. filtre de Kalman de Matéo : vitesse des roues + mesure caméra, ça donne la position.
+       Si le filtre n'a pas encore de position ou n'est plus sûr de lui, on s'arrête
+    3. on demande un chemin à Robin au départ, après un évitement ou après un kidnapping
+    4. on suit le chemin, ou on évite un obstacle vu par les capteurs infrarouges
+    5. on envoie les vitesses aux moteurs
 
 Les modules ne s'échangent que les structures de interfaces.py :
-    vision(t) -> PoseMeasurement        plan(start, goal) -> Path
-Tant que la caméra et la planification ne sont pas prêtes, on utilise les faux
-modules de fake_modules.py. Pour brancher les vrais : changer `vision` et `plan` dans main().
+    vision(t) donne un PoseMeasurement, plan(start, goal) donne un Path
+En attendant la caméra de Sujith et le planificateur de Robin on utilise les faux
+de fake_modules.py. Pour mettre les vrais il suffit de changer vision et plan dans main().
 
-    (depuis le dossier projet_thymio/)
+    (à lancer depuis le dossier projet_thymio/)
     python -m controle.main --sim                       # tout simulé : obstacle, QR caché, kidnapping
     python -m controle.main --sim --plot data/main.png
-    python -m controle.main --reel --goal 400 0         # vrai robot sans caméra (filtre = odométrie)
+    python -m controle.main --reel --goal 400 0         # vrai robot sans caméra (le filtre fait juste de l'odométrie)
 """
 
 import argparse
@@ -28,8 +28,8 @@ from filtre.filter_node import FilterNode
 from controle import controller, local_avoidance, messages, thymio
 from controle.fake_modules import FakeCamera, StartOnlyCamera, straight_line_plan
 
-DT = 0.1            # s
-MAX_TIME = 90.0     # s, sécurité
+DT = 0.1            # durée d'un pas en secondes
+MAX_TIME = 90.0     # au bout de 90 s on arrête tout, au cas où
 
 LED_FOLLOW = (0, 0, 32)      # bleu : suit le chemin
 LED_AVOID = (32, 12, 0)      # orange : évite un obstacle
@@ -38,7 +38,7 @@ LED_DONE = (0, 32, 0)        # vert : arrivé
 
 
 def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
-    """Boucle principale. Renvoie le journal [(t, pose estimée ou None, vraie pose ou None), ...]."""
+    """La boucle. Renvoie un journal [(t, pose estimée ou None, vraie pose ou None), ...] pour les figures."""
     kalman = FilterNode()
     follower = controller.PathFollower()
     avoider = local_avoidance.LocalAvoidance()
@@ -56,12 +56,13 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
         reading = robot.read()
 
         def stop():
+            # on arrête le robot et on passe au pas suivant
             robot.set_motors(0.0, 0.0)
             robot.set_leds(*LED_STOP)
             log.append((now - t0, None, sim.true_pose if sim else None))
             wait(robot, step_start, sim)
 
-        # 1. Kidnapping vu par les capteurs de sol.
+        # 1. Kidnapping : les capteurs de sol ne voient plus le sol
         if thymio.is_lifted(reading):
             if not lifted:
                 print(f"t={now - t0:5.1f}s  robot soulevé -> arrêt")
@@ -71,11 +72,11 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
         if lifted:
             print(f"t={now - t0:5.1f}s  robot reposé -> nouveau filtre (repart de la caméra) et nouveau chemin")
             lifted = False
-            kalman = FilterNode()        # s'initialise sur la prochaine mesure caméra visible
+            kalman = FilterNode()        # nouveau filtre, il prendra la position de la prochaine image de la caméra
             avoiding = False
             need_path = True
 
-        # 2. Filtre : commande réellement appliquée (vitesses mesurées) + mesure caméra.
+        # 2. Filtre : on lui donne la vitesse mesurée des roues et la mesure de la caméra
         kalman.on_control(messages.control_input(now, reading.v_left, reading.v_right))
         kalman.on_measurement(vision(now))
         estimate = kalman.step(now)
@@ -86,7 +87,7 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
             continue
         pose = messages.pose_tuple(estimate)
 
-        # 3. Chemin : au départ, après un évitement, après un kidnapping.
+        # 3. Chemin : on en redemande un au départ, après un évitement et après un kidnapping
         if need_path:
             points = messages.path_points(plan(pose, goal))
             if points is None:
@@ -97,7 +98,7 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
             need_path = False
             print(f"t={now - t0:5.1f}s  nouveau chemin : {len(points)} points")
 
-        # 4. Suivi du chemin, remplacé par l'évitement quand un obstacle est trop près.
+        # 4. On suit le chemin, sauf si un obstacle est trop près : là c'est l'évitement qui commande
         v_left, v_right, done = follower.update(pose)
         if done:
             robot.set_motors(0.0, 0.0)
@@ -117,10 +118,10 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
             led = LED_AVOID
             if finished:
                 avoiding = False
-                need_path = True         # le point visé peut être juste derrière l'obstacle
+                need_path = True         # nouveau chemin depuis ici, sinon le point visé peut être derrière l'obstacle
                 print(f"t={now - t0:5.1f}s  obstacle dépassé -> nouveau chemin")
 
-        # 5. Agir.
+        # 5. On envoie tout au robot
         robot.set_motors(v_left, v_right)
         robot.set_leds(*led)
         log.append((now - t0, pose, sim.true_pose if sim else None))
@@ -130,19 +131,20 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
 
 
 def wait(robot, step_start, sim):
-    """Attendre la fin du pas (le simulateur avance de DT d'un coup)."""
+    """Attendre la fin du pas de 0,1 s (le simulateur, lui, avance de 0,1 s d'un coup)."""
     robot.sleep(DT if sim is not None else max(DT - (time.monotonic() - step_start), 0.001))
 
 
-# --- Scénario de simulation ---
+# Scénario pour tester en simulation
 SIM_START = (100.0, 100.0, 0.0)
 SIM_GOAL = (700.0, 500.0)
-SIM_OBSTACLE = (340.0, 265.0, 20.0)      # gobelet sur la ligne droite, pas sur la carte
-SIM_HIDDEN = [(3.0, 6.0)]                # QR caché pendant 3 s (pendant l'évitement)
-SIM_KIDNAP = (8.0, 10.0, (150.0, 450.0, 0.0))   # soulevé à 8 s, reposé à 10 s à cette pose
+SIM_OBSTACLE = (340.0, 265.0, 20.0)      # un gobelet sur la ligne droite, qui n'est pas sur la carte
+SIM_HIDDEN = [(3.0, 6.0)]                # QR caché entre 3 et 6 s (en plein évitement)
+SIM_KIDNAP = (8.0, 10.0, (150.0, 450.0, 0.0))   # soulevé à 8 s, reposé à 10 s à cet endroit
 
 
 def sim_scenario(t, sim):
+    # on soulève le robot puis on le repose ailleurs, comme pendant la démo
     lift_t, down_t, new_pose = SIM_KIDNAP
     if lift_t <= t < down_t and not sim.lifted:
         sim.lift()
@@ -192,14 +194,14 @@ def main():
         from controle.simulator import SimThymio
         robot = SimThymio(start_pose=SIM_START, obstacles=[SIM_OBSTACLE], seed=1)
         sim, clock, scenario = robot, (lambda: robot.t), sim_scenario
-        vision = FakeCamera(robot, hidden=SIM_HIDDEN)            # plus tard : la caméra de Sujith
+        vision = FakeCamera(robot, hidden=SIM_HIDDEN)            # à remplacer par la caméra de Sujith
         goal = tuple(args.goal) if args.goal else SIM_GOAL
     else:
         robot = thymio.Thymio()
         sim, clock, scenario = None, time.monotonic, None
-        vision = StartOnlyCamera(tuple(args.start))               # plus tard : la caméra de Sujith
+        vision = StartOnlyCamera(tuple(args.start))               # à remplacer par la caméra de Sujith
         goal = tuple(args.goal) if args.goal else (400.0, 0.0)
-    plan = straight_line_plan                                     # plus tard : le planificateur de Robin
+    plan = straight_line_plan                                     # à remplacer par le planificateur de Robin
 
     try:
         log = run(robot, vision, plan, goal, clock, sim, scenario)

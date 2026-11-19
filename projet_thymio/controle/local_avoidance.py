@@ -1,56 +1,55 @@
-"""Évitement local : contourner un obstacle imprévu vu par les capteurs infrarouges.
+"""Évitement local : contourner un obstacle qu'on n'avait pas prévu.
 
-Les obstacles imprévus ne sont pas sur la carte (la carte est faite une seule
-fois au démarrage), donc seuls les capteurs de proximité les voient.
+Les obstacles ajoutés pendant la démo ne sont pas sur la carte (la carte est
+faite une seule fois au début), donc seuls les capteurs infrarouges avant les voient.
 
-Fonctionnement :
-    1. Déclenchement : un des 5 capteurs avant dépasse PROX_ENTER.
-    2. Contournement façon Braitenberg (labs 3 et 4) : on tourne à l'opposé
-       des capteurs qui voient l'obstacle. Pour le capteur du milieu (obstacle
-       pile en face), le côté est choisi au début et gardé jusqu'à la fin,
-       pour que le robot n'hésite pas devant l'obstacle.
-    3. Sortie : tous les capteurs sous PROX_EXIT pendant CLEAR_STEPS pas,
-       puis encore CLEAR_DISTANCE_MM tout droit pour dépasser l'obstacle.
-    4. Ensuite, la boucle principale redemande un chemin depuis la position
-       actuelle (sinon le point visé peut être juste derrière l'obstacle).
+Comment ça marche :
+    1. Un des 5 capteurs avant dépasse PROX_ENTER : on passe en évitement.
+    2. On tourne du côté opposé à l'obstacle, comme Braitenberg dans les labs 3 et 4.
+       Si l'obstacle est pile en face (capteur du milieu), on choisit un côté au début
+       et on le garde, sinon le robot hésite devant l'obstacle.
+    3. Quand les capteurs ne voient plus rien pendant 5 pas, on avance encore 10 cm
+       tout droit pour bien dépasser l'obstacle.
+    4. Après, main.py redemande un chemin depuis là où est le robot.
 
-Capteurs : prox[0] = avant gauche ... prox[2] = milieu ... prox[4] = avant droit.
+Capteurs : prox[0] avant gauche, prox[2] milieu, prox[4] avant droit.
 """
 
 import math
 
 from controle import motion_model
 
-# --- Réglages (MESURER les seuils : valeur des capteurs en fonction de la distance) ---
-PROX_ENTER = 2400        # mesuré : ~8 cm devant le capteur du milieu (boîte blanche) -> évitement
-PROX_EXIT = 300          # mesuré : sous ~1500 le capteur renvoie 0, donc < 300 = rien vu (au-delà de ~13 cm)
-CLEAR_STEPS = 5          # pas de suite sans obstacle (5 x 0,1 s = 0,5 s)
-CLEAR_DISTANCE_MM = 100.0  # tout droit après l'obstacle ; 200 envoyait le robot ~23 cm sur le côté (essai réel), 100 : ~15 cm, même marge en simulation
-V_AVOID = 60.0           # mm/s, vitesse d'avance pendant l'évitement
-K_PROX = 0.015           # (mm/s) par unité de capteur : force du virage ; 0,03 faisait pivoter le vrai robot de 90 à 128° (essais réels)
-WEIGHTS = (1.0, 2.0, 0.0, -2.0, -1.0)   # gauche -> tourner à droite, droite -> tourner à gauche
-CENTER_WEIGHT = 2.0                      # le capteur du milieu pousse du côté choisi
+# Réglages, tous testés sur le vrai robot (voir mesures_reelles.md)
+PROX_ENTER = 2400        # valeur du capteur quand l'obstacle est à environ 8 cm : on commence à éviter
+PROX_EXIT = 300          # en dessous le capteur ne voit plus rien (il renvoie 0 au delà de 13 cm environ)
+CLEAR_STEPS = 5          # il faut 5 pas de suite sans rien voir (0,5 s) pour dire que c'est dégagé
+CLEAR_DISTANCE_MM = 100.0  # puis 10 cm tout droit (avec 20 cm le robot partait trop loin sur le côté)
+V_AVOID = 60.0           # vitesse d'avance pendant l'évitement, en mm/s
+K_PROX = 0.015           # force du virage (avec 0,03 le vrai robot pivotait presque à l'envers)
+WEIGHTS = (1.0, 2.0, 0.0, -2.0, -1.0)   # obstacle à gauche on tourne à droite, obstacle à droite on tourne à gauche
+CENTER_WEIGHT = 2.0                      # le capteur du milieu fait tourner du côté choisi au début
 
 
 def obstacle_detected(prox):
+    """Vrai si un des 5 capteurs avant voit un obstacle trop proche."""
     return max(prox[:5]) > PROX_ENTER
 
 
 class LocalAvoidance:
-    """
+    """Utilisation :
         avoid = LocalAvoidance()
         si obstacle_detected(prox) : avoid.start(prox, pose)
-        puis à chaque pas :          v_left, v_right, fini = avoid.step(prox, pose)
-        quand fini : redemander un chemin depuis la pose actuelle.
+        puis à chaque pas : v_left, v_right, fini = avoid.step(prox, pose)
+        quand fini vaut True on redemande un chemin.
     """
 
     def __init__(self):
-        self.side = 1.0
-        self.clear_steps = 0
-        self.clear_start = None
+        self.side = 1.0          # +1 on tourne à droite, -1 à gauche
+        self.clear_steps = 0     # nombre de pas de suite où on ne voit plus rien
+        self.clear_start = None  # endroit où on a arrêté de voir l'obstacle
 
     def start(self, prox, pose):
-        # +1 : on tourne à droite (obstacle plutôt à gauche), -1 : à gauche.
+        # on regarde de quel côté l'obstacle est le plus visible et on part de l'autre côté
         left, right = prox[0] + prox[1], prox[3] + prox[4]
         self.side = 1.0 if left >= right else -1.0
         self.clear_steps = 0
@@ -60,7 +59,7 @@ class LocalAvoidance:
         front = [float(p) for p in prox[:5]]
 
         if max(front) < PROX_EXIT:
-            # Plus rien devant : on avance tout droit pour dépasser l'obstacle.
+            # plus rien devant : on va tout droit pour dépasser l'obstacle
             self.clear_steps += 1
             if self.clear_start is None:
                 self.clear_start = (pose[0], pose[1])
@@ -68,10 +67,10 @@ class LocalAvoidance:
             finished = self.clear_steps >= CLEAR_STEPS and travelled >= CLEAR_DISTANCE_MM
             return V_AVOID, V_AVOID, finished
 
-        # Obstacle encore visible : Braitenberg.
+        # on voit encore l'obstacle : Braitenberg, chaque capteur pousse le virage d'un côté
         self.clear_steps = 0
         self.clear_start = None
         turn = K_PROX * (sum(w * p for w, p in zip(WEIGHTS, front)) + CENTER_WEIGHT * front[2] * self.side)
-        # turn > 0 : roue gauche plus rapide -> le robot tourne à droite.
+        # si turn > 0 la roue gauche va plus vite donc le robot tourne à droite
         v_left, v_right = V_AVOID + turn, V_AVOID - turn
         return (*motion_model.limit_wheels(v_left, v_right), False)

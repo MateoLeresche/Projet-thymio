@@ -1,15 +1,15 @@
-"""Faux Thymio pour tester le contrôle et l'évitement sans robot.
+"""Faux Thymio pour tester sans le robot.
 
-SimThymio a les mêmes méthodes que thymio.Thymio (read, set_motors, set_leds,
-sleep, close) : on remplace l'un par l'autre sans toucher au reste du code.
+SimThymio a les mêmes fonctions que thymio.Thymio (read, set_motors, set_leds,
+sleep, close), donc on peut mettre l'un ou l'autre sans changer le reste du code.
 
-Ce qu'il simule (de façon grossière) :
-    - la roue gauche un peu plus lente et du bruit sur les vitesses mesurées,
-      pour que l'odométrie dérive comme sur le vrai robot ;
-    - les 5 capteurs avant, face à des obstacles ronds ;
-    - le kidnapping : lift() soulève le robot (capteurs de sol à ~20, il ne bouge
-      plus), put_down(pose) le repose ailleurs.
-Il ne remplace pas les essais sur le vrai robot.
+Ce qu'il fait (en gros) :
+    la roue gauche va un peu moins vite et les vitesses mesurées ont du bruit,
+    pour que l'odométrie se trompe un peu comme en vrai
+    les 5 capteurs avant voient des obstacles ronds (avec la courbe mesurée sur notre robot)
+    les commandes arrivent avec un peu de retard, comme en vrai
+    le kidnapping : lift() soulève le robot, put_down(pose) le repose ailleurs
+Ça ne remplace pas les tests sur le vrai robot.
 """
 
 import math
@@ -18,23 +18,23 @@ import random
 from controle import motion_model
 from controle.thymio import Reading
 
-LEFT_WHEEL_BIAS = 0.97        # la roue gauche va 3 % moins vite que la consigne
-WHEEL_NOISE_STD_MMS = 3.0
-GROUND_ON_PAPER = 900
-GROUND_LIFTED = 20            # mesuré : 15 à 63 selon la hauteur
-COMMAND_DELAY_STEPS = 2       # la consigne agit 2 pas plus tard (~0,2 s : communication + moteurs) ; reproduit le dépassement mesuré dans les virages (K = 3 : +12° simulé, +7 à +10° réels)
+LEFT_WHEEL_BIAS = 0.97        # la roue gauche va 3 % moins vite que ce qu'on demande
+WHEEL_NOISE_STD_MMS = 3.0     # bruit sur la vitesse mesurée des roues
+GROUND_ON_PAPER = 900         # capteur de sol posé sur la feuille
+GROUND_LIFTED = 20            # capteur de sol quand on soulève le robot (on a mesuré 15 à 63)
+COMMAND_DELAY_STEPS = 2       # la commande agit 2 pas plus tard (0,2 s), avec ça le simulateur dépasse dans les virages comme le vrai robot
 
-PROX_ANGLES_RAD = (0.64, 0.32, 0.0, -0.32, -0.64)   # capteur 0 = avant gauche
-PROX_FRONT_OFFSET_MM = 55.0   # du milieu de l'axe des roues à l'avant du robot
-# Courbe mesurée sur le vrai Thymio (capteur du milieu, boîte blanche, voir mesures_reelles.md) :
-# (distance au bord avant en mm, valeur). Au-delà de PROX_RANGE_MM, le capteur renvoie 0.
+PROX_ANGLES_RAD = (0.64, 0.32, 0.0, -0.32, -0.64)   # direction de chaque capteur avant, le 0 c'est à gauche
+PROX_FRONT_OFFSET_MM = 55.0   # distance entre le milieu des roues et l'avant du robot
+# Courbe qu'on a mesurée sur notre Thymio avec la boîte blanche (voir mesures_reelles.md) :
+# (distance à l'avant du robot en mm, valeur du capteur). Plus loin que PROX_RANGE_MM ça donne 0.
 PROX_CURVE = ((0.0, 4500), (20.0, 4290), (40.0, 3628), (60.0, 2845), (80.0, 2416),
               (100.0, 2051), (120.0, 1702))
-PROX_RANGE_MM = 130.0         # vu à 12 cm, plus rien à 14 cm
+PROX_RANGE_MM = 130.0         # le capteur voyait la boîte à 12 cm mais plus à 14 cm
 
 
 def prox_value(gap):
-    """Valeur du capteur pour un obstacle à `gap` mm du bord avant (interpolation de la courbe mesurée)."""
+    """Valeur du capteur pour un obstacle à gap mm de l'avant du robot (on lit la courbe mesurée)."""
     if gap >= PROX_RANGE_MM:
         return 0
     gap = max(gap, 0.0)
@@ -47,7 +47,7 @@ def prox_value(gap):
 class SimThymio:
     def __init__(self, start_pose=(0.0, 0.0, 0.0), obstacles=(), seed=0):
         """obstacles : liste de (x, y, rayon) en mm."""
-        self.true_pose = tuple(start_pose)   # vraie position (inconnue du robot réel)
+        self.true_pose = tuple(start_pose)   # la vraie position (le vrai robot, lui, ne la connaît pas)
         self.obstacles = list(obstacles)
         self.t = 0.0
         self._cmd = (0.0, 0.0)
@@ -65,7 +65,7 @@ class SimThymio:
         )
 
     def set_motors(self, v_left, v_right):
-        # Même arrondi et mêmes limites que le vrai robot.
+        # mêmes arrondis et mêmes limites que sur le vrai robot
         units_l = motion_model.mms_to_thymio(v_left, is_left=True)
         units_r = motion_model.mms_to_thymio(v_right)
         self._pending.append((motion_model.thymio_to_mms(units_l), motion_model.thymio_to_mms(units_r)))
@@ -76,13 +76,13 @@ class SimThymio:
         pass
 
     def sleep(self, dt):
-        """Fait avancer le monde de dt secondes."""
+        """Fait avancer le temps de dt secondes."""
         real_left = self._cmd[0] * LEFT_WHEEL_BIAS
         real_right = self._cmd[1]
         if not self.lifted:                    # en l'air, les roues tournent dans le vide
             x, y, th = self.true_pose
             self.true_pose = motion_model.odometry_step(x, y, th, real_left, real_right, dt)
-        # Le robot mesure ses vitesses avec du bruit.
+        # le robot mesure la vitesse de ses roues avec un peu de bruit
         self._measured = (
             real_left + self._rng.gauss(0.0, WHEEL_NOISE_STD_MMS),
             real_right + self._rng.gauss(0.0, WHEEL_NOISE_STD_MMS),
@@ -102,7 +102,7 @@ class SimThymio:
         self.lifted = False
 
     def collides(self):
-        """Vrai si le robot (rayon environ 60 mm) touche un obstacle."""
+        """Vrai si le robot (environ 6 cm de rayon) touche un obstacle."""
         x, y, _ = self.true_pose
         return any(math.hypot(ox - x, oy - y) < r + 60.0 for ox, oy, r in self.obstacles)
 
