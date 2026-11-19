@@ -22,6 +22,8 @@ Date : 2026-11-19. Robot sur une table, relié en USB, en charge.
 
 Biais de la mesure, variable d'une lecture à l'autre, écart-type faible (0.2 à 0.5 mm/s) pendant une lecture.
 
+**Cause : le câble de charge.** Câble débranché (après redémarrage du robot), 3 lectures de 3 s : **exactement 0,0 mm/s** sur les deux roues, sans aucune variation. Le biais n'apparaît que pendant la charge : faire les essais câble débranché.
+
 ## Capteurs avant selon la distance (boîte blanche, en face du capteur du milieu)
 
 Distance du bord avant de la coque à la boîte, mesurée à la règle (±5 mm).
