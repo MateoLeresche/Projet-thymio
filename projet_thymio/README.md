@@ -15,10 +15,10 @@ Robot Thymio qui va d'un point A à un point B sur une surface blanche délimit�
 ## Règles d'or
 
 1. **Chacun ne modifie que son dossier.** Cela évite presque tous les conflits Git.
-2. **`interfaces.py` est partagé** : on prévient le groupe avant de le modifier. Le détail du contrat est dans `docs/CONTRAT_INTERFACES.md`.
+2. **`interfaces.py` est partagé** : prévenir avant de modifier. Le détail du contrat est dans `docs/CONTRAT_INTERFACES.md`.
 3. Un module ne connaît que les structures de `interfaces.py`, jamais l'implémentation des autres.
 4. Pas de pixels hors de `vision/`, pas d'unités Thymio brutes hors de `controle/`.
-5. Chaque module est testable seul et fournit des données factices aux autres dès la semaine 1.
+5. Si possible chaque module est testable seul.
 
 ## Installation
 
@@ -44,11 +44,8 @@ git push                              # 5. envoyer
 
 Conseils :
 
-- **Un push par jour minimum**, même incomplet. Petits commits fréquents = peu de conflits.
 - **Ne jamais utiliser `git push --force`.**
-- En cas de conflit ou de doute : **ne pas forcer, demander à quelqu'un de plus à l'aise.**
-- Notebooks (`.ipynb`) : un notebook par personne, jamais édité à deux. Effacer les sorties avant de commit (*Cell > All Output > Clear*).
-- Vidéos et gros enregistrements : **pas dans Git** (partage via un drive commun).
+- En cas de conflit ou de doute pas hésitez à demander
 - Pas de GitHub Desktop ? Les boutons *Commit* / *Push* / *Pull* de VS Code font la même chose.
 
 ## Branches
