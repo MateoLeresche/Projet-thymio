@@ -230,3 +230,18 @@ Le facteur dépend de la vitesse : 0,353 à 35 mm/s, environ 0,33 à 0,34 à 80 
 | Déviation latérale | 0 mm | 0 mm |
 
 Erreur de l'odométrie seule sur 40 cm : **2 mm (0,5 %)**, contre 18 mm (5 %) avec le facteur mesuré à 35 mm/s.
+
+## Réglage de K_ALPHA, refait avec les mesures toutes les 50 ms et le facteur 0,337
+
+| K_ALPHA | Côté 2 | Côté 3 | Côté 4 | Écart au chemin max / moyen | Durée |
+|---|---|---|---|---|---|
+| 2 | +8°, puis ±4° | +6°, puis ±4° | +5°, puis ±4° | 19 / 7,2 mm | 22,1 s |
+| 3 | +10°, puis ±2° | +8°, puis ±4° | +7°, puis ±2° | 15 / 4,4 mm | 22,0 s |
+
+Le dépassement a été divisé par 3 environ depuis ce matin (K = 2 : 14 à 28° avant). Avec des mesures fraîches, K = 3 n'oscille plus et suit mieux le chemin.
+**Choix : K_ALPHA = 3.** Simulateur : retard de 2 pas (0,2 s) au lieu de 3, il reproduit le nouveau dépassement (K = 3 : +12° simulé ; K = 2 : +5°).
+
+## Kidnapping sur le vrai robot (main.py, sans caméra)
+
+- Soulevé à t = 1,8 s (après 11 cm) : détecté par les capteurs de sol, arrêt et LEDs rouges.
+- Reposé à t = 7,9 s : nouveau filtre ; sans caméra il ne peut pas s'initialiser, le robot reste arrêté jusqu'à la fin (30 s). Comportement attendu : avec la caméra, il repartira sur la première mesure visible.

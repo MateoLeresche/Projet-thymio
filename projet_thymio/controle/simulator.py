@@ -22,7 +22,7 @@ LEFT_WHEEL_BIAS = 0.97        # la roue gauche va 3 % moins vite que la consigne
 WHEEL_NOISE_STD_MMS = 3.0
 GROUND_ON_PAPER = 900
 GROUND_LIFTED = 20            # mesuré : 15 à 63 selon la hauteur
-COMMAND_DELAY_STEPS = 3       # la consigne agit 3 pas plus tard (~0,3 s : communication + moteurs) ; reproduit le dépassement mesuré dans les virages
+COMMAND_DELAY_STEPS = 2       # la consigne agit 2 pas plus tard (~0,2 s : communication + moteurs) ; reproduit le dépassement mesuré dans les virages (K = 3 : +12° simulé, +7 à +10° réels)
 
 PROX_ANGLES_RAD = (0.64, 0.32, 0.0, -0.32, -0.64)   # capteur 0 = avant gauche
 PROX_FRONT_OFFSET_MM = 55.0   # du milieu de l'axe des roues à l'avant du robot

@@ -37,7 +37,7 @@ from controle import motion_model
 
 # --- Réglages (À RÉGLER par essais, noter les valeurs testées pour le rapport) ---
 V_MAX = 80.0                  # mm/s, vitesse quand le robot est bien orienté
-K_ALPHA = 2.0                 # 1/s, gain de rotation, choisi sur le vrai robot : 3 oscille après les virages (voir mesures_reelles.md)
+K_ALPHA = 3.0                 # 1/s, gain de rotation, choisi sur le vrai robot une fois les mesures reçues toutes les 50 ms (voir mesures_reelles.md)
 OMEGA_MAX = 2.5               # rad/s, rotation maximale
 K_RHO = 1.0                   # 1/s, ralentissement à l'arrivée
 V_MIN = 15.0                  # mm/s, pour ne pas ramper indéfiniment juste avant le but
