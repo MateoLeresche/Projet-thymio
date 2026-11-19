@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 from simulation.simulator import simulate_and_filter, square_trajectory
 from evaluation.metrics import summarize, errors
@@ -35,6 +36,9 @@ def monte_carlo(label, make_node=None, **sim_kw):
 
 
 def main():
+    figures_dir = Path(__file__).resolve().parent.parent / "docs" / "figures"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+
     rows = [
         monte_carlo("Camera 10 Hz (reglage nominal)"),
         monte_carlo("Camera 2 Hz", cam_every=5),
@@ -82,7 +86,7 @@ def main():
     a.axhline(3, color="g", ls=":", label="valeur attendue (3)")
     a.set_title("NIS (chi2, 3 ddl)"); a.set_xlabel("t (s)"); a.legend(fontsize=7)
     plt.tight_layout()
-    plt.savefig("docs/figures/validation_nominal.png", dpi=110)
+    plt.savefig(figures_dir / "validation_nominal.png", dpi=110)
     plt.close()
 
     # ---- figure 2 : QR cache 5 s ----
@@ -100,7 +104,7 @@ def main():
     ax[1].axvspan(10, 15, alpha=0.15, color="gray")
     ax[1].set_xlabel("t (s)"); ax[1].set_ylabel("deg"); ax[1].legend(); ax[1].set_title("Angle")
     plt.tight_layout()
-    plt.savefig("docs/figures/validation_qr_cache.png", dpi=110)
+    plt.savefig(figures_dir / "validation_qr_cache.png", dpi=110)
     plt.close()
     print("\nFigures sauvegardees dans docs/figures/")
 
