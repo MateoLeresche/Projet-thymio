@@ -29,6 +29,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows : .venv\Scripts\activate
 pip install -r requirements.txt
 pytest                           # doit afficher que tous les tests passent
+python -m evaluation.run_validation   # validation du filtre en simulation (figures dans docs/figures/)
 ```
 
 ## Workflow Git (5 lignes)
