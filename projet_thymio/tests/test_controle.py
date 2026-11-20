@@ -76,3 +76,31 @@ def test_main_loop_simulated():
     assert math.hypot(x - main.SIM_GOAL[0], y - main.SIM_GOAL[1]) < 40.0
     assert not robot.collides()
     assert any(pose is None for _, pose, _ in log)          # arrêté pendant le kidnapping
+
+
+def test_same_image_given_once_to_filter(monkeypatch):
+    """La caméra prend une image toutes les 0,3 s mais on l'appelle toutes les 0,1 s :
+    le filtre ne doit recevoir chaque image qu'une fois."""
+    from controle import main
+    from filtre.filter_node import FilterNode
+    received = []
+
+    class CountingFilter(FilterNode):
+        def on_measurement(self, m):
+            received.append(m.t)
+            super().on_measurement(m)
+
+    monkeypatch.setattr(main, "FilterNode", CountingFilter)
+    robot = SimThymio(start_pose=(0.0, 0.0, 0.0), obstacles=[], seed=1)
+    camera = main.FakeCamera(robot)
+    images = {}
+
+    def slow_camera(t):
+        t_image = round(math.floor(t / 0.3 + 1e-6) * 0.3, 3)   # instant de la dernière image prise
+        if t_image not in images:
+            images[t_image] = camera(t_image)
+        return images[t_image]
+
+    main.run(robot, slow_camera, main.straight_line_plan, (300.0, 0.0), lambda: robot.t, robot)
+    assert len(received) > 5
+    assert len(received) == len(set(received))      # jamais 2 fois la même image

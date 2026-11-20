@@ -11,6 +11,7 @@
 
 Les modules ne s'échangent que les structures de interfaces.py :
     vision(t) donne un PoseMeasurement, plan(start, goal) donne un Path
+    (vision peut redonner la dernière image : on regarde son t pour savoir si elle est nouvelle)
 En attendant la caméra de Sujith et le planificateur de Robin on utilise les faux
 de fake_modules.py. Pour mettre les vrais il suffit de changer vision et plan dans main().
 
@@ -45,6 +46,7 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
     avoiding = False
     need_path = True
     lifted = False
+    last_image_t = None   # instant de la dernière image donnée au filtre
     log = []
     t0 = clock()
 
@@ -76,10 +78,14 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
             avoiding = False
             need_path = True
 
-        # 2. Filtre : on lui donne la vitesse mesurée des roues et la mesure de la caméra
+        # 2. Filtre : la vitesse mesurée des roues à chaque pas, et la caméra seulement si c'est une
+        #    nouvelle image (si on redonne la même, le filtre la compte plusieurs fois et se croit trop sûr)
         kalman.on_control(messages.control_input(now, reading.v_left, reading.v_right))
-        kalman.on_measurement(vision(now))
-        estimate = kalman.step(now)
+        image = vision(now)
+        if image is not None and image.t != last_image_t:
+            kalman.on_measurement(image)
+            last_image_t = image.t
+        estimate = kalman.step(now)      # None tant que le filtre n'a pas vu le QR une première fois
         if estimate is None or messages.must_stop(estimate):
             if estimate is not None and estimate.kidnapped:
                 need_path = True

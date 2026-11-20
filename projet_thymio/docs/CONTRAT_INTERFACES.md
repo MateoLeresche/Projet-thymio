@@ -21,7 +21,7 @@ Les valeurs marquées **[À CONFIRMER]** sont à trancher en équipe. Les struct
 
 **Vision → Filtre** : un `PoseMeasurement` par image, y compris quand le QR est caché (`visible=False`, champs à `None`). Coordonnées déjà en mm dans le repère monde. Sujith fournit l'écart-type du bruit de mesure (x, y, θ, robot immobile, ~200 images).
 
-**Contrôle → Filtre** : un `ControlInput` par pas, avec la vitesse réellement commandée. `v = (v_g + v_d)/2`, `omega = (v_d − v_g)/L`. Le robot fait soit une translation pure (omega = 0), soit une rotation sur place (v = 0) : pas de trajectoire courbe.
+**Contrôle → Filtre** : un `ControlInput` par pas, avec la vitesse des roues **mesurée** par le Thymio (pas la consigne : pendant un évitement c'est ce que le robot fait vraiment). `v = (v_g + v_d)/2`, `omega = (v_d − v_g)/L`. Le contrôle fait des trajectoires courbes (v et omega en même temps), OK pour le filtre (Matéo), à confirmer avec Robin.
 
 **Filtre → Planification, Contrôle** : un `PoseEstimate` à chaque pas Ts, avec ou sans mesure caméra. Si `kidnapped=True` : Robin replanifie, Matthieu arrête le robot le temps de la replanification.
 
@@ -44,14 +44,14 @@ Les valeurs marquées **[À CONFIRMER]** sont à trancher en équipe. Les struct
 
 | Paramètre | Valeur | Méthode | Date | Responsable |
 |---|---|---|---|---|
-| Facteur Thymio → mm/s | | | | Matéo + Matthieu |
-| Empattement L (mm) | | | | Matthieu |
+| Facteur Thymio → mm/s | 0,337 mm/s par unité (0,353 à 35 mm/s) | ligne droite à 227 unités (≈ 80 mm/s) mesurée à la règle, vérifié avec la boucle principale : 390 mm à la règle, 388 estimés | 19/11/2026 | Matéo + Matthieu |
+| Empattement L (mm) | 96,5 | rotation sur place à ±227 unités pendant 8 s, angle réel mesuré sur photo (720° ± 2°) | 19/11/2026 | Matthieu |
 | Bruit caméra σx, σy (mm) | | | | Sujith |
 | Bruit caméra σθ (rad) | | | | Sujith |
-| σ_v, σ_ω (bruit commande) | | | | Matéo |
+| σ_v, σ_ω (bruit commande) | σ_v ≈ 3,6 mm/s, σ_ω ≈ 0,075 rad/s | écart-type des vitesses **mesurées** (motor.speed) à 227 unités : ≈ 5 mm/s par roue en ligne droite et en rotation, puis σ_v = σ_roue/√2, σ_ω = √2·σ_roue/L | 19/11/2026 | Matéo (mesures Matthieu) |
 | Q plancher | | | | Matéo |
 | Taille de cellule (mm) | | | | Robin + Matthieu |
-| Ts (s) | | | | tous |
+| Ts (s) | 0,1 | boucle mesurée à 101 à 105 ms par pas sur le vrai robot, mesures du Thymio reçues toutes les 50 ms | 19/11/2026 | tous |
 
 ## 6. À confirmer
 
