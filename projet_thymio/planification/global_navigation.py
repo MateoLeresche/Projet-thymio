@@ -4,7 +4,7 @@ Global navigation (Planification) - Projet Thymio.
 Visibility graph built on the corners of the inflated obstacles + Dijkstra.
 
 Contract (CONTRAT_INTERFACES.md v0.1):
-  - Input : Environment (Vision), PoseEstimate (Filtre), goal (see TODO below)
+  - Input : Environment (Vision), goal (Vision), PoseEstimate (Filtre)
   - Output: Path(waypoints in mm, valid)
   - Obstacles arrive in mm WITHOUT margin -> inflation is done here.
   - The black limits are treated as obstacles -> arena rectangle is shrunk by the margin.
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import heapq
 import math
-from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 Point = Tuple[float, float]
@@ -201,7 +200,7 @@ class GlobalPlanner:
     is called, so replanning after a kidnapping only costs start/goal edges.
     """
 
-    def __init__(self, margin_mm: float = 70.0, arc_step_deg: float = 45.0):
+    def __init__(self, margin_mm: float = 80.0, arc_step_deg: float = 45.0):
         self.margin = margin_mm
         self.arc_step_deg = arc_step_deg   # smaller = rounder corners, more nodes
         self.polys: List[Polygon] = []        # inflated
