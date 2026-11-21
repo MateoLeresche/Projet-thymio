@@ -61,3 +61,18 @@ def test_no_false_kidnapping_nominal():
 def test_dropout_is_not_kidnapping():
     run = simulate_and_filter(CMDS, seed=0, hidden=[(10.0, 15.0)])
     assert not run["kidnapped"].any()
+
+def test_latency_compensation_helps():
+    cmds = square_trajectory(speed=80.0)
+    def rmse(comp):
+        return np.mean([summarize(simulate_and_filter(
+            cmds, seed=s, delay_steps=2,
+            node=FilterNode(use_jacobian=True, compensate=comp)))["rmse_pos_mm"]
+            for s in range(10)])
+    assert rmse(True) < 0.7 * rmse(False)
+
+def test_compensation_neutral_without_delay():
+    cmds = square_trajectory()
+    a = simulate_and_filter(cmds, seed=1, node=FilterNode(compensate=False))
+    b = simulate_and_filter(cmds, seed=1, node=FilterNode(compensate=True))
+    assert np.allclose(a["est"], b["est"], atol=1e-6)

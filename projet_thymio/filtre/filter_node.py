@@ -11,7 +11,7 @@ from . import params
 
 
 class FilterNode:
-    def __init__(self, R=None, sigma_v=None, sigma_w=None, q_floor=None, use_jacobian=True):
+    def __init__(self, R=None, sigma_v=None, sigma_w=None, q_floor=None, use_jacobian=True, compensate=True):
         """Les parametres par defaut viennent de params.py ; on peut les
         surcharger (utile pour tester un filtre mal regle en simulation)."""
         self.R = params.R if R is None else R
@@ -27,6 +27,8 @@ class FilterNode:
         self.n_kidnap = params.N_KIDNAP
         self.n_reject = 0
         self.use_jacobian = use_jacobian
+        self.compensate = compensate
+        self.hist = []
 
     # --- entrees (appelees par les autres modules) ---
     def on_control(self, u: ControlInput):
@@ -52,28 +54,62 @@ class FilterNode:
         self.kf.predict(self.last_u.v, self.last_u.omega, dt)
         self.last_t = t_now
 
+        self.hist.append([t_now, self.kf.x.copy(), self.kf.P.copy(),
+                        self.last_u.v, self.last_u.omega])
+        while len(self.hist) > 2 and self.hist[0][0] < t_now - 2.0:
+            self.hist.pop(0)                             # on garde 2 s d'historique
+
         # 3. correction si une mesure visible est arrivee (sinon : prediction seule)
         used, kidnapped = False, False
         self.last_nis = None
         m, self.pending_z = self.pending_z, None
         if m is not None and m.visible:
             z = np.array([m.x, m.y, m.theta])
-            _, _, nis = self.kf.innovation(z)
+            nis, ok = self._correct(z, m.t)
             self.last_nis = nis
-            if nis <= self.nis_gate:
-                self.kf.update(z)
-                used = True
-                self.n_reject = 0
+            if ok:
+                used, self.n_reject = True, 0
             else:
                 self.n_reject += 1
                 if self.n_reject >= self.n_kidnap:
-                    # on reinitialise le filtre sur la mesure aberrante
-                    self.kf = KalmanFilter(z, self.R,
-                                           self.sigma_v, self.sigma_w, self.q_floor, use_jacobian=self.use_jacobian)
-                    used, kidnapped = True, True
+                    self.kf = KalmanFilter(z, self.R, self.sigma_v, self.sigma_w,
+                                   self.q_floor, use_jacobian=self.use_jacobian)
+                    self.hist = []
                     self.n_reject = 0
-
+                    used, kidnapped = True, True
+        if self.hist:
+            self.hist[-1][1], self.hist[-1][2] = self.kf.x.copy(), self.kf.P.copy()
         return self._publish(t_now, used, kidnapped)
+               
+    def _index_at(self, t):
+        """Entrée d'historique la plus proche de l'instant t, ou None si trop ancienne."""
+        if not self.hist:
+            return None
+        i = min(range(len(self.hist)), key=lambda j: abs(self.hist[j][0] - t))
+        return i if abs(self.hist[i][0] - t) <= params.TS else None
+
+    def _correct(self, z, t_meas):
+        """Applique la mesure (avec rejeu si besoin). Retourne (nis, acceptée)."""
+        i = self._index_at(t_meas) if self.compensate else None
+        if i is None or i == len(self.hist) - 1:
+            _, _, nis = self.kf.innovation(z)
+            if nis <= self.nis_gate:
+                self.kf.update(z)
+                return nis, True
+            return nis, False
+        x_now, P_now = self.kf.x.copy(), self.kf.P.copy()
+        self.kf.x, self.kf.P = self.hist[i][1].copy(), self.hist[i][2].copy()
+        _, _, nis = self.kf.innovation(z)           # NIS à l'instant de capture
+        if nis > self.nis_gate:
+            self.kf.x, self.kf.P = x_now, P_now     # rejet : on ne touche à rien
+            return nis, False
+        self.kf.update(z)
+        self.hist[i][1], self.hist[i][2] = self.kf.x.copy(), self.kf.P.copy()
+        for j in range(i + 1, len(self.hist)):      # rejeu jusqu'à maintenant
+            t, _, _, v, w = self.hist[j]
+            self.kf.predict(v, w, t - self.hist[j - 1][0])
+            self.hist[j][1], self.hist[j][2] = self.kf.x.copy(), self.kf.P.copy()
+        return nis, True
 
     def _publish(self, t, used, kidnapped=False):
         x, y, th = self.kf.x

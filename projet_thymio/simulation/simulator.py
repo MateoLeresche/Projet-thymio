@@ -60,7 +60,7 @@ def circle_trajectory(radius_mm=300.0, speed=50.0, ts=params.TS, laps=1):
 def simulate_and_filter(commands, x0=(100.0, 100.0, 0.0), ts=params.TS,
                         sigma_cam=params.SIGMA_CAM, sigma_v=params.SIGMA_V,
                         sigma_w=params.SIGMA_W, q_floor=params.Q_FLOOR,
-                        cam_every=1, hidden=(), seed=0, node=None, teleport=None):
+                        cam_every=1, hidden=(), seed=0, node=None, teleport=None, delay_steps=0):
     """Simule le robot, genere les messages et fait tourner le filtre.
 
     cam_every : une mesure camera tous les `cam_every` pas.
@@ -74,6 +74,7 @@ def simulate_and_filter(commands, x0=(100.0, 100.0, 0.0), ts=params.TS,
     q_std = np.sqrt(np.diag(q_floor))
 
     truth = np.array(x0, dtype=float)
+    truth_hist = [truth.copy()]          # truth_hist[k] = vérité au pas k
     out = {k: [] for k in ("t", "truth", "u", "z", "visible", "est", "P", "nis", "used", "kidnapped")}
 
     def cam_visible(t, k):
@@ -81,11 +82,11 @@ def simulate_and_filter(commands, x0=(100.0, 100.0, 0.0), ts=params.TS,
             return False
         return not any(a <= t < b for a, b in hidden)
 
-    def measure(t, k):
+    def measure(t, k, pose, t_capture):
         if not cam_visible(t, k):
-            return PoseMeasurement(t=t, visible=False)
-        z = truth + rng.normal(0.0, sigma_cam)
-        return PoseMeasurement(t=t, visible=True, x=z[0], y=z[1], theta=wrap(z[2]))
+            return PoseMeasurement(t=t_capture, visible=False)
+        z = pose + rng.normal(0.0, sigma_cam)
+        return PoseMeasurement(t=t_capture, visible=True, x=z[0], y=z[1], theta=wrap(z[2]))
 
     # pas 0 : initialisation (la premiere mesure doit etre visible)
     m = PoseMeasurement(t=0.0, visible=True,
@@ -112,7 +113,9 @@ def simulate_and_filter(commands, x0=(100.0, 100.0, 0.0), ts=params.TS,
                     truth = np.array(teleport[1], dtype=float)
                     truth[2] = wrap(truth[2])
                     tele_done = True
-        m = measure(t, k)
+        truth_hist.append(truth.copy())
+        kc = max(k - delay_steps, 0)
+        m = measure(t, k, truth_hist[kc], kc * ts)
         node.on_measurement(m)
         est = node.step(t)
         _log(out, t, truth, (v, w), m, est, node)
