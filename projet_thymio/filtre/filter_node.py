@@ -23,6 +23,9 @@ class FilterNode:
         self.last_u = ControlInput(t=0.0, v=0.0, omega=0.0)
         self.last_t = None
         self.pending_z = None
+        self.nis_gate = params.NIS_GATE
+        self.n_kidnap = params.N_KIDNAP
+        self.n_reject = 0
 
     # --- entrees (appelees par les autres modules) ---
     def on_control(self, u: ControlInput):
@@ -49,16 +52,29 @@ class FilterNode:
         self.last_t = t_now
 
         # 3. correction si une mesure visible est arrivee (sinon : prediction seule)
-        used = False
+        used, kidnapped = False, False
         self.last_nis = None
         m, self.pending_z = self.pending_z, None
         if m is not None and m.visible:
-            _, _, self.last_nis = self.kf.update(np.array([m.x, m.y, m.theta]))
-            used = True
+            z = np.array([m.x, m.y, m.theta])
+            _, _, nis = self.kf.innovation(z)
+            self.last_nis = nis
+            if nis <= self.nis_gate:
+                self.kf.update(z)
+                used = True
+                self.n_reject = 0
+            else:
+                self.n_reject += 1
+                if self.n_reject >= self.n_kidnap:
+                    # on reinitialise le filtre sur la mesure aberrante
+                    self.kf = KalmanFilter(z, self.R,
+                                           self.sigma_v, self.sigma_w, self.q_floor)
+                    used, kidnapped = True, True
+                    self.n_reject = 0
 
-        return self._publish(t_now, used)
+        return self._publish(t_now, used, kidnapped)
 
-    def _publish(self, t, used):
+    def _publish(self, t, used, kidnapped=False):
         x, y, th = self.kf.x
         return PoseEstimate(t=t, x=float(x), y=float(y), theta=float(th),
-                            P=self.kf.P.copy(), measurement_used=used)
+                            P=self.kf.P.copy(), measurement_used=used, kidnapped=kidnapped)

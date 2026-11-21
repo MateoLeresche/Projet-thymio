@@ -53,3 +53,11 @@ class KalmanFilter:
         self.P = IKH @ self.P @ IKH.T + K @ self.R @ K.T
         nis = float(innov @ S_inv @ innov)
         return innov, S, nis
+
+    def innovation(self, z):
+        """Innovation et NIS d'une mesure, sans modifier le filtre."""
+        innov = np.asarray(z, dtype=float) - self.H @ self.x
+        innov[2] = wrap(innov[2])                  # angle : innovation normalisee
+        S = self.H @ self.P @ self.H.T + self.R
+        nis = float(innov @ np.linalg.solve(S, innov))
+        return innov, S, nis
