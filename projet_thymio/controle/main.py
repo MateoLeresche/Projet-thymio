@@ -10,10 +10,12 @@
     5. on envoie les vitesses aux moteurs
 
 Les modules ne s'échangent que les structures de interfaces.py :
-    vision(t) donne un PoseMeasurement, plan(start, goal) donne un Path
+    vision(t) donne un PoseMeasurement, plan(estimation, goal) donne un Path
     (vision peut redonner la dernière image : on regarde son t pour savoir si elle est nouvelle)
-En attendant la caméra de Sujith et le planificateur de Robin on utilise les faux
-de fake_modules.py. Pour mettre les vrais il suffit de changer vision et plan dans main().
+Le planificateur est celui de Robin (planification/global_navigation.py). Il lui faut la
+carte (un Environment) que donnera la caméra de Sujith. En attendant, en simulation on
+utilise la fausse caméra et la fausse carte de fake_modules.py. Sur le vrai robot sans
+caméra on n'a pas de carte, donc on va en ligne droite.
 
     (à lancer depuis le dossier projet_thymio/)
     python -m controle.main --sim                       # tout simulé : obstacle, QR caché, kidnapping
@@ -27,7 +29,8 @@ import time
 
 from filtre.filter_node import FilterNode
 from controle import controller, local_avoidance, messages, thymio
-from controle.fake_modules import FakeCamera, StartOnlyCamera, straight_line_plan
+from controle.fake_modules import FakeCamera, StartOnlyCamera, fake_map, straight_line_plan
+from planification.global_navigation import GlobalPlanner
 
 DT = 0.1            # durée d'un pas en secondes
 MAX_TIME = 90.0     # au bout de 90 s on arrête tout, au cas où
@@ -95,7 +98,7 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
 
         # 3. Chemin : on en redemande un au départ, après un évitement et après un kidnapping
         if need_path:
-            points = messages.path_points(plan(pose, goal))
+            points = messages.path_points(plan(estimate, goal))
             if points is None:
                 print(f"t={now - t0:5.1f}s  pas de chemin -> arrêt")
                 stop()
@@ -144,6 +147,8 @@ def wait(robot, step_start, sim):
 # Scénario pour tester en simulation
 SIM_START = (100.0, 100.0, 0.0)
 SIM_GOAL = (700.0, 500.0)
+SIM_ARENA = (1000.0, 700.0)              # taille de la zone (dans le cadre noir) en mm
+SIM_MAP_OBSTACLE = (400.0, 560.0, 50.0)  # une boîte connue, qui est sur la carte
 SIM_OBSTACLE = (340.0, 265.0, 20.0)      # un gobelet sur la ligne droite, qui n'est pas sur la carte
 SIM_HIDDEN = [(3.0, 6.0)]                # QR caché entre 3 et 6 s (en plein évitement)
 SIM_KIDNAP = (8.0, 10.0, (150.0, 450.0, 0.0))   # soulevé à 8 s, reposé à 10 s à cet endroit
@@ -158,7 +163,7 @@ def sim_scenario(t, sim):
         sim.put_down(new_pose)
 
 
-def save_plot(log, filename, goal, obstacle=None, kidnap_pose=None):
+def save_plot(log, filename, goal, obstacle=None, kidnap_pose=None, map_obstacle=None):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -175,12 +180,15 @@ def save_plot(log, filename, goal, obstacle=None, kidnap_pose=None):
     ax.plot(*goal, "*", ms=14, color="green", label="but")
     if obstacle is not None:
         ax.add_patch(plt.Circle(obstacle[:2], obstacle[2], color="orange", label="obstacle imprévu"))
+    if map_obstacle is not None:
+        x, y, r = map_obstacle
+        ax.add_patch(plt.Rectangle((x - r, y - r), 2 * r, 2 * r, color="gray", label="obstacle sur la carte"))
     if kidnap_pose is not None:
         ax.plot(*kidnap_pose[:2], "x", ms=10, color="red", label="reposé ici (kidnapping)")
     ax.set_aspect("equal")
     ax.set_xlabel("x [mm]")
     ax.set_ylabel("y [mm]")
-    ax.legend(fontsize=8)
+    ax.legend(fontsize=8, loc="lower right")
     fig.savefig(filename, dpi=120, bbox_inches="tight")
     print(f"figure enregistrée : {filename}")
 
@@ -198,16 +206,19 @@ def main():
 
     if args.sim:
         from controle.simulator import SimThymio
-        robot = SimThymio(start_pose=SIM_START, obstacles=[SIM_OBSTACLE], seed=1)
+        robot = SimThymio(start_pose=SIM_START, obstacles=[SIM_MAP_OBSTACLE, SIM_OBSTACLE], seed=1)
         sim, clock, scenario = robot, (lambda: robot.t), sim_scenario
         vision = FakeCamera(robot, hidden=SIM_HIDDEN)            # à remplacer par la caméra de Sujith
         goal = tuple(args.goal) if args.goal else SIM_GOAL
+        planner = GlobalPlanner()                                 # le planificateur de Robin
+        planner.set_environment(fake_map(SIM_ARENA, [SIM_MAP_OBSTACLE], goal))   # carte : à remplacer par celle de Sujith
+        plan = planner.plan
     else:
         robot = thymio.Thymio()
         sim, clock, scenario = None, time.monotonic, None
         vision = StartOnlyCamera(tuple(args.start))               # à remplacer par la caméra de Sujith
         goal = tuple(args.goal) if args.goal else (400.0, 0.0)
-    plan = straight_line_plan                                     # à remplacer par le planificateur de Robin
+        plan = straight_line_plan                                 # pas de carte sans caméra : ligne droite
 
     try:
         log = run(robot, vision, plan, goal, clock, sim, scenario)
@@ -219,7 +230,8 @@ def main():
         print(f"vraie position finale : {math.hypot(x - goal[0], y - goal[1]):.0f} mm du but")
         print("collision !" if sim.collides() else "aucune collision")
     if args.plot:
-        save_plot(log, args.plot, goal, SIM_OBSTACLE if sim else None, SIM_KIDNAP[2] if sim else None)
+        save_plot(log, args.plot, goal, SIM_OBSTACLE if sim else None, SIM_KIDNAP[2] if sim else None,
+                  SIM_MAP_OBSTACLE if sim else None)
 
 
 if __name__ == "__main__":

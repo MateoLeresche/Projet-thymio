@@ -9,7 +9,7 @@ Tout a été testé sur le vrai robot (sauf la partie caméra, en attendant cell
 | Fichier | À quoi il sert |
 |---|---|
 | `main.py` | La boucle principale du projet : caméra, filtre de Matéo, chemin de Robin, suivi + évitement, moteurs. Elle gère aussi le kidnapping, le QR caché et le nouveau chemin après un évitement. |
-| `fake_modules.py` | Une fausse caméra et un faux planificateur, en attendant les vrais. Ils renvoient les mêmes structures que `interfaces.py`. |
+| `fake_modules.py` | Une fausse caméra, une fausse carte et un planificateur en ligne droite (quand on n'a pas de carte). Ils renvoient les mêmes structures que `interfaces.py`. |
 | `messages.py` | Le seul fichier qui lit ou fabrique les structures de `interfaces.py` (PoseEstimate, Path, ControlInput). |
 | `motion_model.py` | Les valeurs mesurées du robot, la conversion unités Thymio / mm/s, l'odométrie. |
 | `thymio.py` | Le seul fichier qui parle au robot (tdmclient). |
@@ -25,7 +25,7 @@ Les tests sont dans `tests/test_controle.py`.
 ## Lancer (depuis le dossier `projet_thymio/`)
 
 ```bash
-python -m controle.main --sim --plot data/main_sim.png   # tout simulé : obstacle, QR caché, kidnapping
+python -m controle.main --sim --plot data/main_sim.png   # tout simulé : boîte sur la carte, obstacle imprévu, QR caché, kidnapping
 python -m controle.main --reel --goal 400 0              # vrai robot sans caméra, 40 cm tout droit
 python -m controle.demo_mouvement --sim                  # carré de 40 cm sur le faux robot
 python -m controle.calibration vitesse                   # puis rotation, prox, sol
@@ -36,20 +36,24 @@ Il faut `tdmclient` pour le vrai robot (`pip install tdmclient`) et Thymio Suite
 
 ## Brancher vos modules dans main.py
 
-Dans `main()` il y a deux lignes à changer quand vos modules sont prêts :
+Le planificateur de Robin est déjà branché : `planner = GlobalPlanner()`, `planner.set_environment(carte)`, puis `main.py` appelle `planner.plan(estimation, goal)` au départ, après un évitement et après un kidnapping.
 
-| Ligne actuelle | À remplacer par | Ce que la fonction doit faire |
+Il reste la caméra de Sujith. Dans `main()` il y a deux lignes à changer :
+
+| Ligne actuelle | À remplacer par | Ce que ça doit donner |
 |---|---|---|
 | `vision = FakeCamera(...)` | la caméra de Sujith | `vision(t)` renvoie un `PoseMeasurement` : la position du **milieu entre les deux roues** (pas le centre du QR) en mm et rad dans le repère de la carte, `t` = moment où l'image a été prise, `visible=False` si le QR est caché |
-| `plan = straight_line_plan` | le planificateur de Robin | `plan(start, goal)` renvoie un `Path` : seulement les coins du chemin, marge comprise, `valid=False` s'il n'y a pas de chemin. Il faut pouvoir l'appeler depuis n'importe quelle position (on recalcule après un évitement ou un kidnapping). |
+| `fake_map(...)` | la carte de Sujith | un `Environment` : taille de la zone dans le cadre noir, obstacles en polygones en mm **sans marge** (Robin l'ajoute), le but |
 
-Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. À chaque pas, `main.py` fait `on_control`, puis `on_measurement` **seulement si c'est une nouvelle image** (on compare le `t` de l'image avec la précédente, donc Sujith peut redonner la même image tant qu'il n'en a pas de nouvelle), puis `step(time.monotonic())`. Tant que le filtre n'a pas vu le QR une première fois, `step` renvoie `None` et le robot reste arrêté. Après un kidnapping, on crée un nouveau `FilterNode`, qui reprend la position de la prochaine image de la caméra.
+Sur le vrai robot sans caméra (`--reel`) on n'a pas de carte, donc on garde la ligne droite (`straight_line_plan`).
+
+Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. À chaque pas, `main.py` fait `on_control`, puis `on_measurement` **seulement si c'est une nouvelle image** (on compare le `t` de l'image avec la précédente, donc Sujith peut redonner la même image tant qu'il n'en a pas de nouvelle), puis `step(time.monotonic())`. Tant que le filtre n'a pas vu le QR une première fois, `step` renvoie `None` et le robot reste arrêté. Le kidnapping est vu de deux façons : les capteurs de sol (robot soulevé, `thymio.is_lifted`) ou le filtre de Matéo (`kidnapped=True` quand la caméra ne colle plus à la prédiction 3 fois de suite). Dans les deux cas le robot s'arrête et on redemande un chemin. Quand il est reposé on crée un nouveau `FilterNode`, qui reprend la position de la prochaine image.
 
 ## Pour chacun
 
 **Matéo** : je t'envoie la vitesse **mesurée** des roues dans `ControlInput` (c'est ce que le robot fait vraiment, même pendant un évitement). Le robot avance et tourne en même temps (loi fluide), ta prédiction marche aussi avec ça. Valeurs mesurées à 80 mm/s : facteur 0,337, empattement 96,5 mm, sigma_v environ 3,6 mm/s, sigma_w environ 0,075 rad/s. Les sigma viennent des vitesses **mesurées** (motor.speed), pas de la consigne, et donnent la même chose en ligne droite et en rotation (environ 5 mm/s par roue). Le facteur est bon aussi en rotation : 720° réels pour 2 tours demandés. Avec ça ton filtre se trompe de 2 mm sur 40 cm sans caméra. Tout est dans le journal de calibration de `docs/CONTRAT_INTERFACES.md`.
 
-**Robin** : le robot fait des courbes (il avance et tourne en même temps), Matéo est OK, il faut juste que ça t'aille. La marge autour des obstacles doit faire au moins 8 cm (le robot fait 11 cm de large et il coupe un peu les virages, environ 1,5 cm). Envoie seulement les coins, pas chaque case de la grille, sinon le robot zigzague.
+**Robin** : ton planificateur est branché dans `main.py` et marche en simulation (contourne la boîte de la carte après le kidnapping, sans collision). Marge de 80 mm : le robot fait 11 cm de large (5,5 cm de chaque côté), il coupe les virages d'environ 1,5 cm, et à 60 mm les capteurs voyaient l'obstacle connu et lançaient l'évitement local pour rien.
 
 **Sujith** : la position doit être celle du milieu entre les roues (le trou au centre du robot, là où on met un feutre), pas le centre du QR. `thymio.is_lifted(lecture)` dit si le robot est soulevé, ça peut t'aider pour le kidnapping.
 
@@ -68,5 +72,6 @@ Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. À chaque pas, `
 
 - Les obstacles ajoutés doivent être **clairs et hauts d'au moins 5 cm** (le noir renvoie mal l'infrarouge).
 - La carte est faite **une seule fois au début**, sinon la caméra ajoute l'obstacle à la carte et on ne voit plus l'évitement.
-- Pas d'obstacle à moins de 15 cm d'un coin du chemin.
+- Pas d'obstacle imprévu à moins de 15 cm d'un coin du chemin.
+- Le but doit être à au moins 8 cm du cadre noir et des obstacles de la carte, sinon le planificateur ne trouve pas de chemin (`valid=False`) et le robot ne bouge pas.
 - Débrancher le câble de charge pendant les essais, il fausse la vitesse mesurée.

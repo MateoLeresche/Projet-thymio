@@ -1,15 +1,16 @@
-"""Fausse caméra et faux planificateur, pour tester main.py en attendant ceux de Sujith et Robin.
+"""Fausse caméra, fausse carte et faux planificateur, pour tester main.py sans la caméra de Sujith.
 
 Ils renvoient exactement les mêmes structures que interfaces.py, donc le jour où
 les vrais sont prêts on les met à la place dans main.py et le reste ne change pas.
 
     vision(t) donne un PoseMeasurement (comme fera la caméra de Sujith)
-    plan(start, goal) donne un Path (comme fera le planificateur de Robin)
+    fake_map(...) donne un Environment (la carte que fera la caméra de Sujith)
+    straight_line_plan(estimation, goal) donne un Path (quand on n'a pas de carte)
 """
 
 import random
 
-from interfaces import Path, PoseMeasurement
+from interfaces import Environment, Path, PoseMeasurement
 from controle import motion_model
 
 CAMERA_STD = (2.0, 2.0, 0.02)   # bruit de la fausse caméra : 2 mm, 2 mm et 0,02 rad
@@ -58,6 +59,16 @@ class StartOnlyCamera:
         return PoseMeasurement(t=t, visible=True, x=x, y=y, theta=theta)
 
 
-def straight_line_plan(start, goal):
+def fake_map(arena, round_obstacles, goal):
+    """Fausse carte pour le planificateur de Robin.
+
+    arena = (largeur, hauteur) en mm. Le simulateur ne connaît que des obstacles ronds
+    (x, y, rayon) : sur la carte on met le carré autour de chacun.
+    """
+    squares = [[(x - r, y - r), (x + r, y - r), (x + r, y + r), (x - r, y + r)] for x, y, r in round_obstacles]
+    return Environment(t=0.0, width_mm=arena[0], height_mm=arena[1], obstacles=squares, goal=tuple(goal))
+
+
+def straight_line_plan(estimate, goal):
     """Faux planificateur : ligne droite du robot jusqu'au but (comme si la carte était vide)."""
-    return Path(t=0.0, waypoints=[tuple(start[:2]), tuple(goal)], valid=True)
+    return Path(t=estimate.t, waypoints=[(estimate.x, estimate.y), tuple(goal)], valid=True)
