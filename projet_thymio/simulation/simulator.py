@@ -50,6 +50,12 @@ def square_trajectory(side_mm=400.0, speed=50.0, rate=0.5, ts=params.TS):
         segs += [("move", side_mm, speed), ("turn", np.pi / 2, rate)]
     return build_commands(segs, ts)
 
+def circle_trajectory(radius_mm=300.0, speed=50.0, ts=params.TS, laps=1):
+    """Cercle parcouru dans le sens anti-horaire : translation + rotation continue."""
+    omega = speed / radius_mm
+    n = int(round(2 * np.pi * laps / omega / ts))
+    return np.array([(speed, omega)] * n, dtype=float)
+
 
 def simulate_and_filter(commands, x0=(100.0, 100.0, 0.0), ts=params.TS,
                         sigma_cam=params.SIGMA_CAM, sigma_v=params.SIGMA_V,

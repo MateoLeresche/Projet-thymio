@@ -11,7 +11,7 @@ from . import params
 
 
 class FilterNode:
-    def __init__(self, R=None, sigma_v=None, sigma_w=None, q_floor=None, use_jacobian=False):
+    def __init__(self, R=None, sigma_v=None, sigma_w=None, q_floor=None, use_jacobian=True):
         """Les parametres par defaut viennent de params.py ; on peut les
         surcharger (utile pour tester un filtre mal regle en simulation)."""
         self.R = params.R if R is None else R
