@@ -11,7 +11,7 @@ from . import params
 
 
 class FilterNode:
-    def __init__(self, R=None, sigma_v=None, sigma_w=None, q_floor=None):
+    def __init__(self, R=None, sigma_v=None, sigma_w=None, q_floor=None, use_jacobian=False):
         """Les parametres par defaut viennent de params.py ; on peut les
         surcharger (utile pour tester un filtre mal regle en simulation)."""
         self.R = params.R if R is None else R
@@ -26,6 +26,7 @@ class FilterNode:
         self.nis_gate = params.NIS_GATE
         self.n_kidnap = params.N_KIDNAP
         self.n_reject = 0
+        self.use_jacobian = use_jacobian
 
     # --- entrees (appelees par les autres modules) ---
     def on_control(self, u: ControlInput):
@@ -42,7 +43,7 @@ class FilterNode:
             if m is None or not m.visible:
                 return None
             self.kf = KalmanFilter([m.x, m.y, m.theta], self.R,
-                                   self.sigma_v, self.sigma_w, self.q_floor)
+                                   self.sigma_v, self.sigma_w, self.q_floor, use_jacobian=self.use_jacobian)
             self.last_t, self.pending_z = t_now, None
             return self._publish(t_now, used=True)
 
@@ -68,7 +69,7 @@ class FilterNode:
                 if self.n_reject >= self.n_kidnap:
                     # on reinitialise le filtre sur la mesure aberrante
                     self.kf = KalmanFilter(z, self.R,
-                                           self.sigma_v, self.sigma_w, self.q_floor)
+                                           self.sigma_v, self.sigma_w, self.q_floor, use_jacobian=self.use_jacobian)
                     used, kidnapped = True, True
                     self.n_reject = 0
 

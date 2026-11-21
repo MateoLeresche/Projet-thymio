@@ -13,7 +13,7 @@ from .angles import wrap
 
 
 class KalmanFilter:
-    def __init__(self, z0, R, sigma_v, sigma_w, q_floor):
+    def __init__(self, z0, R, sigma_v, sigma_w, q_floor, use_jacobian=False):
         """
         z0      : premiere mesure [x, y, theta]
         R       : covariance de mesure camera (3x3)
@@ -28,6 +28,7 @@ class KalmanFilter:
         self.Su = np.diag([sigma_v ** 2, sigma_w ** 2])
         self.Qf = np.array(q_floor, dtype=float)
         self.H = np.eye(3)
+        self.use_jacobian = use_jacobian
 
     def predict(self, v, w, dt):
         """Etape de prediction : P augmente."""
@@ -38,7 +39,13 @@ class KalmanFilter:
         self.x = self.x + B @ np.array([v, w])     # x_nouveau = A x_ancien + B u, avec A = I
         self.x[2] = wrap(self.x[2])
         Q = B @ self.Su @ B.T + self.Qf
-        self.P = self.P + Q                        # A P A^T + Q avec A = I
+        if self.use_jacobian:
+            F = np.array([[1.0, 0.0, -v * dt * np.sin(th)],
+                          [0.0, 1.0,  v * dt * np.cos(th)],
+                          [0.0, 0.0,  1.0]])
+            self.P = F @ self.P @ F.T + Q
+        else:
+            self.P = self.P + Q                     # A P A^T + Q avec A = I
 
     def update(self, z):
         """Etape de correction : P diminue. Retourne (innovation, S, NIS)."""
