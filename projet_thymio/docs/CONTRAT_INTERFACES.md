@@ -14,7 +14,8 @@ Les valeurs marquées **[À CONFIRMER]** sont à trancher en équipe. Les struct
 
 - **Repère monde** : origine = coin inférieur gauche du carré noir **[À CONFIRMER]** ; x vers la droite de l'image ; y vers le haut (conversion pixel → monde faite par Sujith) ; θ positif anti-horaire ; θ = 0 quand le Thymio regarde vers +x.
 - **Unités** : position mm ; angle rad dans [−π, π] ; vitesse mm/s ; vitesse angulaire rad/s ; temps s.
-- **Temps** : `time.monotonic()`. Chaque message porte l'instant de **capture** `t`. Pas du filtre : Ts = 0,1 s **[À CONFIRMER]**.
+- **Temps** : `time.monotonic()`. Chaque message porte l'instant de **capture** `t`. Pas du filtre : Ts = 0,1 s.
+  Pour `PoseMeasurement`, `t` est pris **à l'acquisition de l'image** (pas après le traitement OpenCV / QR). Le filtre compense le retard par rejeu jusqu'à ~0,2 s ; au-delà, la précision se dégrade (voir tableau de validation).
 - Aucun pixel hors de Vision. Aucune unité Thymio brute (−500…500) hors de Contrôle.
 
 ## 3. Contrat module par module
