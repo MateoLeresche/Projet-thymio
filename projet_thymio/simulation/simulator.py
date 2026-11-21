@@ -68,7 +68,7 @@ def simulate_and_filter(commands, x0=(100.0, 100.0, 0.0), ts=params.TS,
     q_std = np.sqrt(np.diag(q_floor))
 
     truth = np.array(x0, dtype=float)
-    out = {k: [] for k in ("t", "truth", "u", "z", "visible", "est", "P", "nis", "used")}
+    out = {k: [] for k in ("t", "truth", "u", "z", "visible", "est", "P", "nis", "used", "kidnapped")}
 
     def cam_visible(t, k):
         if k % cam_every != 0:
@@ -124,3 +124,4 @@ def _log(out, t, truth, u, m, est, node):
     out["P"].append(est.P)
     out["nis"].append(np.nan if node.last_nis is None else node.last_nis)
     out["used"].append(est.measurement_used)
+    out["kidnapped"].append(est.kidnapped)
