@@ -67,11 +67,14 @@ def test_messages():
 
 
 def test_main_loop_simulated():
-    """Boucle complète en simulation : obstacle imprévu, QR caché 3 s, kidnapping."""
+    """Boucle complète en simulation avec le planificateur de Robin : boîte sur la carte,
+    obstacle imprévu, QR caché 3 s, kidnapping."""
     from controle import main
-    robot = SimThymio(start_pose=main.SIM_START, obstacles=[main.SIM_OBSTACLE], seed=1)
+    robot = SimThymio(start_pose=main.SIM_START, obstacles=[main.SIM_MAP_OBSTACLE, main.SIM_OBSTACLE], seed=1)
     vision = main.FakeCamera(robot, hidden=main.SIM_HIDDEN)
-    log = main.run(robot, vision, main.straight_line_plan, main.SIM_GOAL, lambda: robot.t, robot, main.sim_scenario)
+    planner = main.GlobalPlanner()
+    planner.set_environment(main.fake_map(main.SIM_ARENA, [main.SIM_MAP_OBSTACLE], main.SIM_GOAL))
+    log = main.run(robot, vision, planner.plan, main.SIM_GOAL, lambda: robot.t, robot, main.sim_scenario)
     x, y, _ = robot.true_pose
     assert math.hypot(x - main.SIM_GOAL[0], y - main.SIM_GOAL[1]) < 40.0
     assert not robot.collides()
