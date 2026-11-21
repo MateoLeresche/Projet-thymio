@@ -54,7 +54,7 @@ def square_trajectory(side_mm=400.0, speed=50.0, rate=0.5, ts=params.TS):
 def simulate_and_filter(commands, x0=(100.0, 100.0, 0.0), ts=params.TS,
                         sigma_cam=params.SIGMA_CAM, sigma_v=params.SIGMA_V,
                         sigma_w=params.SIGMA_W, q_floor=params.Q_FLOOR,
-                        cam_every=1, hidden=(), seed=0, node=None):
+                        cam_every=1, hidden=(), seed=0, node=None, teleport=None):
     """Simule le robot, genere les messages et fait tourner le filtre.
 
     cam_every : une mesure camera tous les `cam_every` pas.
@@ -89,6 +89,7 @@ def simulate_and_filter(commands, x0=(100.0, 100.0, 0.0), ts=params.TS,
     est = node.step(0.0)
     _log(out, 0.0, truth, (0.0, 0.0), m, est, node)
 
+    tele_done = False
     for k, (v, w) in enumerate(commands, start=1):
         t = k * ts
         # commande appliquee entre t-ts et t, annoncee au filtre
@@ -101,6 +102,10 @@ def simulate_and_filter(commands, x0=(100.0, 100.0, 0.0), ts=params.TS,
         noisy_u = np.array([v, w]) + rng.normal(0.0, Su)
         truth = truth + B @ noisy_u + rng.normal(0.0, q_std)
         truth[2] = wrap(truth[2])
+        if teleport is not None and not tele_done and t >= teleport[0]:
+                    truth = np.array(teleport[1], dtype=float)
+                    truth[2] = wrap(truth[2])
+                    tele_done = True
         m = measure(t, k)
         node.on_measurement(m)
         est = node.step(t)

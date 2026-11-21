@@ -44,3 +44,20 @@ def test_runs_are_reproducible():
     a = simulate_and_filter(CMDS, seed=3)
     b = simulate_and_filter(CMDS, seed=3)
     assert np.allclose(a["est"], b["est"])
+
+def test_kidnapping_detected():
+    run = simulate_and_filter(CMDS, seed=0, teleport=(10.0, (300.0, 50.0, 2.0)))
+    k = run["kidnapped"]
+    assert k.sum() == 1                     # détecte le kidnapping une seule fois
+    t_det = run["t"][np.argmax(k)]
+    assert 10.0 < t_det < 10.6              # détecte le kidnapping rapidement (environ 0.3 s)
+    err = np.linalg.norm(run["est"][-1][:2] - run["truth"][-1][:2])
+    assert err < 10.0                       # l'estimation se recolle rapidement (environ 5 cm)
+
+def test_no_false_kidnapping_nominal():
+    for s in range(N):
+        assert not simulate_and_filter(CMDS, seed=s)["kidnapped"].any()
+
+def test_dropout_is_not_kidnapping():
+    run = simulate_and_filter(CMDS, seed=0, hidden=[(10.0, 15.0)])
+    assert not run["kidnapped"].any()
