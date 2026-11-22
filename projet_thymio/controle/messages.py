@@ -14,7 +14,7 @@ from interfaces import ControlInput, Path, PoseEstimate
 from controle import motion_model
 
 # si le filtre est trop incertain (QR caché trop longtemps) on arrête le robot
-POSITION_STD_MAX_MM = 50.0   # à confirmer avec Matéo : 5 cm d'incertitude max
+POSITION_STD_MAX_MM = 50.0   # seuil provisoire de sécurité sur une arène de 900 mm
 
 
 def pose_tuple(estimate: PoseEstimate):

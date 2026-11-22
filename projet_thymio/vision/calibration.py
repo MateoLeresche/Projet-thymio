@@ -1,0 +1,18 @@
+ARENA_WIDTH_MM = 900.0
+ARENA_HEIGHT_MM = 900.0
+
+CORRECTED_SIZE_PX = 1000
+ARENA_MARGIN_PX = 30
+ARENA_USABLE_SIZE_PX = CORRECTED_SIZE_PX - 2 * ARENA_MARGIN_PX
+
+
+def pixel_to_mm(px, py):
+    x = (px - ARENA_MARGIN_PX) * ARENA_WIDTH_MM / ARENA_USABLE_SIZE_PX
+    y = (CORRECTED_SIZE_PX - ARENA_MARGIN_PX - py) * ARENA_HEIGHT_MM / ARENA_USABLE_SIZE_PX
+    return float(x), float(y)
+
+
+def mm_to_pixel(x, y):
+    px = ARENA_MARGIN_PX + x * ARENA_USABLE_SIZE_PX / ARENA_WIDTH_MM
+    py = CORRECTED_SIZE_PX - ARENA_MARGIN_PX - y * ARENA_USABLE_SIZE_PX / ARENA_HEIGHT_MM
+    return int(round(px)), int(round(py))
