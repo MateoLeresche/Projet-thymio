@@ -20,12 +20,15 @@ caméra on n'a pas de carte, donc on va en ligne droite.
     (à lancer depuis le dossier projet_thymio/)
     python -m controle.main --sim                       # tout simulé : obstacle, QR caché, kidnapping
     python -m controle.main --sim --plot data/main.png
-    python -m controle.main --reel --goal 400 0         # vrai robot sans caméra (le filtre fait juste de l'odométrie)
+    python -m controle.main --camera --goal 400 100     # caméra seule, sans Thymio
+    python -m controle.main --reel --goal 400 100       # vrai robot avec caméra
 """
 
 import argparse
 import math
 import time
+
+import cv2
 
 from filtre.filter_node import FilterNode
 from controle import controller, local_avoidance, messages, thymio
@@ -40,6 +43,8 @@ LED_AVOID = (32, 12, 0)      # orange : évite un obstacle
 LED_STOP = (32, 0, 0)        # rouge : arrêté (soulevé, pas de position, filtre trop incertain, pas de chemin)
 LED_DONE = (0, 32, 0)        # vert : arrivé
 
+CAMERA_DEFAULT_GOAL = (400.0, 100.0)
+
 
 def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
     """La boucle. Renvoie un journal [(t, pose estimée ou None, vraie pose ou None), ...] pour les figures."""
@@ -48,8 +53,10 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
     avoider = local_avoidance.LocalAvoidance()
     avoiding = False
     need_path = True
+    current_path = None
     lifted = False
     last_image_t = None   # instant de la dernière image donnée au filtre
+    last_stop_reason = None
     log = []
     t0 = clock()
 
@@ -89,16 +96,34 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
             kalman.on_measurement(image)
             last_image_t = image.t
         estimate = kalman.step(now)      # None tant que le filtre n'a pas vu le QR une première fois
-        if estimate is None or messages.must_stop(estimate):
-            if estimate is not None and estimate.kidnapped:
+        if estimate is None:
+            reason = "aucune première mesure caméra"
+            if reason != last_stop_reason:
+                print(f"t={now - t0:5.1f}s  arrêt : {reason}")
+                last_stop_reason = reason
+            stop()
+            continue
+        if messages.must_stop(estimate):
+            std_x = estimate.P[0][0] ** 0.5
+            std_y = estimate.P[1][1] ** 0.5
+            reason = (
+                f"kidnapping={estimate.kidnapped}, "
+                f"stdx={std_x:.1f} mm, stdy={std_y:.1f} mm"
+            )
+            if reason != last_stop_reason:
+                print(f"t={now - t0:5.1f}s  arrêt : {reason}")
+                last_stop_reason = reason
+            if estimate.kidnapped:
                 need_path = True
             stop()
             continue
+        last_stop_reason = None
         pose = messages.pose_tuple(estimate)
 
         # 3. Chemin : on en redemande un au départ, après un évitement et après un kidnapping
         if need_path:
-            points = messages.path_points(plan(estimate, goal))
+            current_path = plan(estimate, goal)
+            points = messages.path_points(current_path)
             if points is None:
                 print(f"t={now - t0:5.1f}s  pas de chemin -> arrêt")
                 stop()
@@ -106,6 +131,9 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
             follower.set_path(points)
             need_path = False
             print(f"t={now - t0:5.1f}s  nouveau chemin : {len(points)} points")
+
+        if sim is None and hasattr(vision, "show_interface"):
+            vision.show_interface(estimate, current_path, goal)
 
         # 4. On suit le chemin, sauf si un obstacle est trop près : là c'est l'évitement qui commande
         v_left, v_right, done = follower.update(pose)
@@ -193,16 +221,79 @@ def save_plot(log, filename, goal, obstacle=None, kidnap_pose=None, map_obstacle
     print(f"figure enregistrée : {filename}")
 
 
+def run_camera_test(vision, goal):
+    """Teste la caméra, le filtre, l'environnement et le planificateur sans moteur."""
+    kalman = FilterNode()
+    planner = GlobalPlanner()
+    environment = vision.environment(goal)
+    if environment.goal is not None:
+        goal = environment.goal
+    planner.set_environment(environment)
+    last_image_t = None
+    last_visible = None
+    last_heartbeat = time.monotonic()
+    print("Mode caméra uniquement : aucun moteur ne sera envoyé")
+    print("Recherche du cercle rouge plein...")
+
+    while True:
+        try:
+            now = time.monotonic()
+            image = vision(now)
+        except KeyboardInterrupt:
+            print("Arrêt demandé par Ctrl+C")
+            break
+
+        if image is not None and image.t != last_image_t:
+            kalman.on_measurement(image)
+            last_image_t = image.t
+
+            if last_visible != image.visible:
+                if image.visible:
+                    print("QR ArUco détecté")
+                else:
+                    print("QR ArUco caché : prédiction seule")
+                last_visible = image.visible
+
+        kalman.on_control(messages.control_input(now, 0.0, 0.0))
+        estimate = kalman.step(now)
+
+        if estimate is not None:
+            path = planner.plan(estimate, goal)
+            key = vision.show_interface(estimate, path, goal)
+            if key == ord("q"):
+                print("Arrêt demandé par la touche q")
+                break
+            if now - last_heartbeat >= 2.0:
+                print(
+                    f"pose=({estimate.x:.1f}, {estimate.y:.1f}, {estimate.theta:.2f}) "
+                    f"chemin={'valide' if path.valid else 'invalide'} "
+                    f"camera={'mesure' if estimate.measurement_used else 'perdue'}"
+                )
+                last_heartbeat = now
+        time.sleep(DT)
+
+
 def main():
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--sim", action="store_true", help="tout simulé")
-    mode.add_argument("--reel", action="store_true", help="vrai robot, sans caméra")
+    mode.add_argument("--camera", action="store_true", help="test de la caméra, du filtre et du planificateur sans Thymio")
+    mode.add_argument("--reel", action="store_true", help="vrai robot avec caméra")
     parser.add_argument("--goal", nargs=2, type=float, default=None, help="but x y en mm")
     parser.add_argument("--start", nargs=3, type=float, default=(0.0, 0.0, 0.0),
                         help="vrai robot : pose de départ x y theta (mm, mm, rad)")
     parser.add_argument("--plot", default=None, help="enregistrer la figure (ex. data/main.png)")
     args = parser.parse_args()
+
+    if args.camera:
+        goal = tuple(args.goal) if args.goal else CAMERA_DEFAULT_GOAL
+        from vision.realtime import RealCamera
+        vision = RealCamera()
+        try:
+            run_camera_test(vision, goal)
+        finally:
+            vision.close()
+        return
 
     if args.sim:
         from controle.simulator import SimThymio
@@ -214,16 +305,25 @@ def main():
         planner.set_environment(fake_map(SIM_ARENA, [SIM_MAP_OBSTACLE], goal))   # carte : à remplacer par celle de Sujith
         plan = planner.plan
     else:
-        robot = thymio.Thymio()
         sim, clock, scenario = None, time.monotonic, None
-        vision = StartOnlyCamera(tuple(args.start))               # à remplacer par la caméra de Sujith
-        goal = tuple(args.goal) if args.goal else (400.0, 0.0)
-        plan = straight_line_plan                                 # pas de carte sans caméra : ligne droite
+        goal = tuple(args.goal) if args.goal else CAMERA_DEFAULT_GOAL
+        from vision.realtime import RealCamera
+        vision = RealCamera()
+        robot = thymio.Thymio()
+
+        planner = GlobalPlanner()
+        environment = vision.environment(goal)
+        if environment.goal is not None:
+            goal = environment.goal
+        planner.set_environment(environment)
+        plan = planner.plan
 
     try:
         log = run(robot, vision, plan, goal, clock, sim, scenario)
     finally:
         robot.close()
+        if sim is None:
+            vision.close()
 
     if sim is not None:
         x, y, _ = sim.true_pose
