@@ -17,11 +17,16 @@ from .perspective import calculate_perspective, correct_perspective
 
 def create_aruco_detector():
     aruco_dict = cv2.aruco.getPredefinedDictionary(
-        cv2.aruco.DICT_5X5_50
+        cv2.aruco.DICT_4X4_50
     )
 
     parameters = cv2.aruco.DetectorParameters()
     parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+    parameters.adaptiveThreshWinSizeMin = 3
+    parameters.adaptiveThreshWinSizeMax = 23
+    parameters.adaptiveThreshWinSizeStep = 10
+    parameters.minMarkerPerimeterRate = 0.02
+    parameters.polygonalApproxAccuracyRate = 0.05
 
     return cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
@@ -151,10 +156,15 @@ if __name__ == "__main__":
     # Création du détecteur
     detector = create_aruco_detector()
 
-    print("Détection du Thymio...")
+    print("Calibration caméra : immobilisez le Thymio.")
+    print("200 mesures visibles seront enregistrées.")
+
+    x_samples = []
+    y_samples = []
+    theta_samples = []
 
     # Boucle principale
-    while True:
+    while len(x_samples) < 200:
         ret, frame = cap.read()
 
         if not ret:
@@ -166,11 +176,57 @@ if __name__ == "__main__":
         # Détection du robot
         result, measurement = detect_robot(corrected, detector)
 
+        if measurement.visible:
+            x_samples.append(measurement.x)
+            y_samples.append(measurement.y)
+            theta_samples.append(measurement.theta)
+
+            cv2.putText(
+                result,
+                f"Calibration: {len(x_samples)} / 200",
+                (20, 100),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 255),
+                2
+            )
+
         # Afficher l'image
         cv2.imshow("Vue de dessus - Thymio", result)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+
+    if len(x_samples) == 200:
+        sigma_x = np.std(x_samples)
+        sigma_y = np.std(y_samples)
+        theta_mean = np.mean(theta_samples)
+        sigma_theta = np.std([
+            math.atan2(math.sin(theta - theta_mean),
+                       math.cos(theta - theta_mean))
+            for theta in theta_samples
+        ])
+
+        print("\nMESURES X")
+        print(",".join(f"{value:.6f}" for value in x_samples))
+        print("\nMESURES Y")
+        print(",".join(f"{value:.6f}" for value in y_samples))
+        print("\nMESURES THETA")
+        print(",".join(f"{value:.6f}" for value in theta_samples))
+        print("\nECART-TYPE SIGMA_CAM")
+        print(f"sigma_x={sigma_x:.6f}")
+        print(f"sigma_y={sigma_y:.6f}")
+        print(f"sigma_theta={sigma_theta:.6f}")
+        print(
+            "SIGMA_CAM=np.array("
+            f"[{sigma_x:.6f}, {sigma_y:.6f}, {sigma_theta:.6f}]"
+            ")"
+        )
+    else:
+        print(
+            f"\nCalibration interrompue : "
+            f"{len(x_samples)} mesures visibles sur 200."
+        )
 
     cap.release()
     cv2.destroyAllWindows()

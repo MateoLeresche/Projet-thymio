@@ -1,6 +1,5 @@
 import time
 import math
-import threading
 
 import cv2
 import numpy as np
@@ -31,41 +30,15 @@ class RealCamera:
         self.goal = None
         self.goal_pixel = None
         self.environment_obstacles = []
-        self.latest_frame = None
-        self.running = True
-        self.capture_lock = threading.Lock()
-        self.capture_thread = threading.Thread(
-            target=self._capture_loop,
-            name="realtime-camera",
-            daemon=True,
-        )
-        self.capture_thread.start()
 
         # 3. Calibrer une seule fois la vue de dessus
         self._calibrate()
-
-    def _capture_loop(self):
-        # 1. Lire les images en continu dans un thread separe
-        while self.running:
-            ret, frame = self.capture.read()
-            if ret:
-                with self.capture_lock:
-                    self.latest_frame = frame
-            else:
-                time.sleep(0.01)
-
-    def _get_frame(self):
-        # 2. Recuperer la derniere image disponible sans attendre la camera
-        with self.capture_lock:
-            if self.latest_frame is None:
-                return False, None
-            return True, self.latest_frame.copy()
 
     def _calibrate(self):
         # 1. Attendre la détection des quatre coins du terrain
         print("Détection du terrain...")
         while self.perspective is None:
-            ret, frame = self._get_frame()
+            ret, frame = self.capture.read()
             if not ret:
                 time.sleep(0.01)
                 continue
@@ -84,7 +57,7 @@ class RealCamera:
 
     def __call__(self, t):
         # 1. Lire une nouvelle image
-        ret, frame = self._get_frame()
+        ret, frame = self.capture.read()
         if not ret:
             return PoseMeasurement(t=t, visible=False)
 
@@ -118,7 +91,7 @@ class RealCamera:
 
     def environment(self, goal=None):
         # 1. Lire une image pour construire l'environnement
-        ret, frame = self._get_frame()
+        ret, frame = self.capture.read()
         if not ret:
             return Environment(t=time.monotonic(), width_mm=ARENA_WIDTH_MM, height_mm=ARENA_HEIGHT_MM,
                                obstacles=[], goal=tuple(goal) if goal is not None else None)
@@ -292,6 +265,5 @@ class RealCamera:
         return cv2.waitKey(1) & 0xFF
 
     def close(self):
-        self.running = False
         self.capture.release()
         cv2.destroyAllWindows()

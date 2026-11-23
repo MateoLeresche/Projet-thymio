@@ -8,7 +8,7 @@ import numpy as np
 TS = 0.1                                   # s [Mesuré à 101 à 105 ms par pas sur le thymio, le 19/11/2026]
 
 # Bruit camera (a fournir par P1 : ecart-type robot immobile, ~200 images)
-SIGMA_CAM = np.array([2.0, 2.0, 0.02])     # mm, mm, rad   [PLACEHOLDER]
+SIGMA_CAM = np.array([0.264850, 1.271449, 0.005302])  # mm, mm, rad [Mesuré sur 200 images]
 R = np.diag(SIGMA_CAM ** 2)
 
 # Bruit sur la commande (a mesurer : allers de longueur connue, rotations de 90 deg)

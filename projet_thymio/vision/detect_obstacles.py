@@ -16,7 +16,7 @@ OBSTACLE_GRAY_THRESHOLD = 80
 
 def create_aruco_detector():
     aruco_dict = cv2.aruco.getPredefinedDictionary(
-        cv2.aruco.DICT_5X5_50
+        cv2.aruco.DICT_4X4_50
     )
     parameters = cv2.aruco.DetectorParameters()
     return cv2.aruco.ArucoDetector(aruco_dict, parameters)
