@@ -19,6 +19,7 @@ Toutes les valeurs sorties sont exprimees en millimetres ou en radians. Aucun ca
 | `detect_obstacles.py` | Detecte les obstacles sombres et les transforme en polygones |
 | `detect_goal.py` | Detecte le cercle rouge plein representant le but |
 | `realtime.py` | Assemble la webcam, les fonctions de vision et les interfaces du projet |
+| `calibration.py` | Centralise les dimensions du terrain et les conversions pixel/mm |
 
 ## Flux de donnees
 
@@ -122,10 +123,12 @@ Dans `detect_obstacles.py` :
 
 Dans `detect_robot.py` :
 
-- dictionnaire ArUco ;
-- identifiant du marqueur ;
+- dictionnaire ArUco `DICT_4X4_50` ;
+- identifiant du marqueur `0` ;
 - conversion pixels vers millimetres ;
 - calcul de theta.
+- seuils adaptatifs du detecteur ;
+- raffinement subpixel des coins ;
 
 Dans `detect_goal.py` :
 
@@ -133,14 +136,33 @@ Dans `detect_goal.py` :
 - aire minimale du cercle ;
 - seuil de circularite.
 
-## Calibration recommandee
+Dans `calibration.py` :
 
-Lancer le mode camera avec le Thymio immobile pendant environ 200 images. Mesurer les ecarts-types des valeurs recues :
+- largeur et hauteur du terrain en mm ;
+- taille de l'image vue de dessus ;
+- marge autour du terrain ;
+- fonctions communes de conversion pixel/mm.
 
-```python
-sigma_x = np.std(samples_x)
-sigma_y = np.std(samples_y)
-sigma_theta = np.std(samples_theta)
+## Calibration du bruit camera
+
+Lancer le programme avec le Thymio immobile et son marqueur bien visible :
+
+```bash
+python -m vision.detect_robot
 ```
 
-Ces valeurs doivent ensuite etre ajoutees au parametre `SIGMA_CAM` du filtre dans `filtre/params.py`.
+Le programme conserve les valeurs uniquement lorsque `visible=True` jusqu'à obtenir 200 mesures.
+Il affiche ensuite les mesures `x`, `y`, `theta`, les trois ecarts-types et une ligne directement utilisable dans `filtre/params.py`.
+
+Valeurs actuellement mesurees :
+
+```python
+SIGMA_CAM = np.array([0.264850, 1.271449, 0.005302])
+R = np.diag(SIGMA_CAM ** 2)
+```
+
+Ces valeurs sont exprimees en :
+
+- mm pour `x` ;
+- mm pour `y` ;
+- radian pour `theta`.
