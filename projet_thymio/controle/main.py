@@ -224,7 +224,7 @@ def save_plot(log, filename, goal, obstacle=None, kidnap_pose=None, map_obstacle
 def run_camera_test(vision, goal):
     """Teste la caméra, le filtre, l'environnement et le planificateur sans moteur."""
     kalman = FilterNode()
-    planner = GlobalPlanner()
+    planner = GlobalPlanner(margin_mm=100)
     environment = vision.environment(goal)
     if environment.goal is not None:
         goal = environment.goal
@@ -301,7 +301,7 @@ def main():
         sim, clock, scenario = robot, (lambda: robot.t), sim_scenario
         vision = FakeCamera(robot, hidden=SIM_HIDDEN)            # à remplacer par la caméra de Sujith
         goal = tuple(args.goal) if args.goal else SIM_GOAL
-        planner = GlobalPlanner()                                 # le planificateur de Robin
+        planner = GlobalPlanner(margin_mm=100)                                 # le planificateur de Robin
         planner.set_environment(fake_map(SIM_ARENA, [SIM_MAP_OBSTACLE], goal))   # carte : à remplacer par celle de Sujith
         plan = planner.plan
     else:
@@ -311,7 +311,7 @@ def main():
         vision = RealCamera()
         robot = thymio.Thymio()
 
-        planner = GlobalPlanner()
+        planner = GlobalPlanner(margin_mm=100)
         environment = vision.environment(goal)
         if environment.goal is not None:
             goal = environment.goal
