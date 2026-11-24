@@ -85,9 +85,6 @@ def inflate_polygon(poly: Polygon, margin: float, arc_step_deg: float = 45.0) ->
       polygon (edges tangent to the circle), so the distance to the obstacle is
       never below `margin` and the overshoot is at most margin/cos(step/2).
     - Concave corners use the intersection of the two offset edges (mitre).
-    Exact for convex polygons, approximate for concave ones with a large
-    margin; for those prefer shapely:
-        Polygon(poly).buffer(margin, join_style=1)
     """
     if _signed_area(poly) < 0:      # force CCW
         poly = poly[::-1]
@@ -195,7 +192,7 @@ def simplify_collinear(pts: List[Point], tol_mm: float = 1.0, free=None) -> List
 class GlobalPlanner:
     """Visibility graph + Dijkstra.
 
-    margin_mm : robot radius + safety (Thymio ~ 55 mm half-width -> tune with Matthieu).
+    margin_mm : robot radius + safety.
     The static graph (corner <-> corner) is rebuilt only when set_environment()
     is called, so replanning after a kidnapping only costs start/goal edges.
     """
