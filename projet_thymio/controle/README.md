@@ -2,7 +2,7 @@
 
 Ici il y a tout ce qui fait bouger le Thymio : la communication avec le robot, le suivi du chemin, l'évitement des obstacles imprévus, et la boucle principale qui relie tous les modules.
 
-Tout a été testé sur le vrai robot (sauf la partie caméra, en attendant celle de Sujith). Les mesures et les essais sont dans `mesures_reelles.md`.
+Tout a été testé sur le vrai robot, sauf avec la caméra de Sujith (branchée dans `main.py` mais pas encore essayée avec le robot). Les mesures et les essais sont dans `mesures_reelles.md`.
 
 ## Les fichiers
 
@@ -26,7 +26,9 @@ Les tests sont dans `tests/test_controle.py`.
 
 ```bash
 python -m controle.main --sim --plot data/main_sim.png   # tout simulé : boîte sur la carte, obstacle imprévu, QR caché, kidnapping
-python -m controle.main --reel --goal 400 0              # vrai robot sans caméra, 40 cm tout droit
+python -m controle.main --camera                         # caméra + filtre + planificateur, sans Thymio
+python -m controle.main --reel                           # vrai robot avec la caméra
+python -m controle.main --odometrie --goal 400 0         # vrai robot sans caméra, 40 cm tout droit
 python -m controle.demo_mouvement --sim                  # carré de 40 cm sur le faux robot
 python -m controle.calibration vitesse                   # puis rotation, prox, sol
 pytest
@@ -34,18 +36,17 @@ pytest
 
 Il faut `tdmclient` pour le vrai robot (`pip install tdmclient`) et Thymio Suite ouvert, sans ouvrir de langage dedans (sinon il bloque le robot).
 
-## Brancher vos modules dans main.py
+## Les modules dans main.py
 
-Le planificateur de Robin est déjà branché : `planner = GlobalPlanner()`, `planner.set_environment(carte)`, puis `main.py` appelle `planner.plan(estimation, goal)` au départ, après un évitement et après un kidnapping.
+Tout est branché :
 
-Il reste la caméra de Sujith. Dans `main()` il y a deux lignes à changer :
+- **Caméra de Sujith** (`vision.realtime.RealCamera`) : `vision(t)` renvoie un `PoseMeasurement` (position du **milieu entre les deux roues** en mm et rad, `t` = moment où l'image a été **prise**), et `vision.environment(goal)` renvoie la carte une seule fois au début.
+- **Planificateur de Robin** : `planner.set_environment(carte)`, puis `main.py` appelle `planner.plan(estimation, goal)` au départ, après un évitement et après un kidnapping.
+- **Filtre de Matéo** : voir plus bas.
 
-| Ligne actuelle | À remplacer par | Ce que ça doit donner |
-|---|---|---|
-| `vision = FakeCamera(...)` | la caméra de Sujith | `vision(t)` renvoie un `PoseMeasurement` : la position du **milieu entre les deux roues** (pas le centre du QR) en mm et rad dans le repère de la carte, `t` = moment où l'image a été prise, `visible=False` si le QR est caché |
-| `fake_map(...)` | la carte de Sujith | un `Environment` : taille de la zone dans le cadre noir, obstacles en polygones en mm **sans marge** (Robin l'ajoute), le but |
+En simulation (`--sim`) la caméra et la carte sont remplacées par `FakeCamera` et `fake_map` de `fake_modules.py`, donc pas besoin d'OpenCV pour la simulation et les tests.
 
-Sur le vrai robot sans caméra (`--reel`) on n'a pas de carte, donc on garde la ligne droite (`straight_line_plan`).
+Sur le vrai robot sans caméra (`--odometrie`) on n'a pas de carte, donc on garde la ligne droite (`straight_line_plan`).
 
 Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. À chaque pas, `main.py` fait `on_control`, puis `on_measurement` **seulement si c'est une nouvelle image** (on compare le `t` de l'image avec la précédente, donc Sujith peut redonner la même image tant qu'il n'en a pas de nouvelle), puis `step(time.monotonic())`. Tant que le filtre n'a pas vu le QR une première fois, `step` renvoie `None` et le robot reste arrêté. Le kidnapping est vu de deux façons : les capteurs de sol (robot soulevé, `thymio.is_lifted`) ou le filtre de Matéo (`kidnapped=True` quand la caméra ne colle plus à la prédiction 3 fois de suite). Dans les deux cas le robot s'arrête et on redemande un chemin. Quand il est reposé on crée un nouveau `FilterNode`, qui reprend la position de la prochaine image.
 

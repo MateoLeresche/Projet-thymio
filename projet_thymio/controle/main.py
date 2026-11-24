@@ -12,23 +12,22 @@
 Les modules ne s'échangent que les structures de interfaces.py :
     vision(t) donne un PoseMeasurement, plan(estimation, goal) donne un Path
     (vision peut redonner la dernière image : on regarde son t pour savoir si elle est nouvelle)
-Le planificateur est celui de Robin (planification/global_navigation.py). Il lui faut la
-carte (un Environment) que donnera la caméra de Sujith. En attendant, en simulation on
-utilise la fausse caméra et la fausse carte de fake_modules.py. Sur le vrai robot sans
-caméra on n'a pas de carte, donc on va en ligne droite.
+Le planificateur est celui de Robin (planification/global_navigation.py), la caméra et la
+carte (un Environment) sont celles de Sujith (vision/realtime.py). En simulation on utilise
+la fausse caméra et la fausse carte de fake_modules.py. Sur le vrai robot sans caméra
+(--odometrie) on n'a pas de carte, donc on va en ligne droite.
 
     (à lancer depuis le dossier projet_thymio/)
     python -m controle.main --sim                       # tout simulé : obstacle, QR caché, kidnapping
     python -m controle.main --sim --plot data/main.png
     python -m controle.main --camera --goal 400 100     # caméra seule, sans Thymio
     python -m controle.main --reel --goal 400 100       # vrai robot avec caméra
+    python -m controle.main --odometrie --goal 400 0    # vrai robot sans caméra (le filtre fait juste de l'odométrie)
 """
 
 import argparse
 import math
 import time
-
-import cv2
 
 from filtre.filter_node import FilterNode
 from controle import controller, local_avoidance, messages, thymio
@@ -106,12 +105,10 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
         if messages.must_stop(estimate):
             std_x = estimate.P[0][0] ** 0.5
             std_y = estimate.P[1][1] ** 0.5
-            reason = (
-                f"kidnapping={estimate.kidnapped}, "
-                f"stdx={std_x:.1f} mm, stdy={std_y:.1f} mm"
-            )
+            # on n'écrit le message qu'une fois par raison d'arrêt (sinon une ligne tous les 0,1 s)
+            reason = "kidnapping vu par le filtre" if estimate.kidnapped else "filtre trop incertain"
             if reason != last_stop_reason:
-                print(f"t={now - t0:5.1f}s  arrêt : {reason}")
+                print(f"t={now - t0:5.1f}s  arrêt : {reason} (écart-type x={std_x:.0f} mm, y={std_y:.0f} mm)")
                 last_stop_reason = reason
             if estimate.kidnapped:
                 need_path = True
@@ -279,9 +276,10 @@ def main():
     mode.add_argument("--sim", action="store_true", help="tout simulé")
     mode.add_argument("--camera", action="store_true", help="test de la caméra, du filtre et du planificateur sans Thymio")
     mode.add_argument("--reel", action="store_true", help="vrai robot avec caméra")
+    mode.add_argument("--odometrie", action="store_true", help="vrai robot sans caméra, position de départ donnée par --start")
     parser.add_argument("--goal", nargs=2, type=float, default=None, help="but x y en mm")
     parser.add_argument("--start", nargs=3, type=float, default=(0.0, 0.0, 0.0),
-                        help="vrai robot : pose de départ x y theta (mm, mm, rad)")
+                        help="--odometrie : pose de départ x y theta (mm, mm, rad)")
     parser.add_argument("--plot", default=None, help="enregistrer la figure (ex. data/main.png)")
     args = parser.parse_args()
 
@@ -304,6 +302,14 @@ def main():
         planner = GlobalPlanner()                                 # le planificateur de Robin
         planner.set_environment(fake_map(SIM_ARENA, [SIM_MAP_OBSTACLE], goal))   # carte : à remplacer par celle de Sujith
         plan = planner.plan
+    elif args.odometrie:
+        # vrai robot sans caméra : on donne la position de départ une fois, ensuite le filtre
+        # ne fait que de l'odométrie. Pas de carte, donc ligne droite jusqu'au but
+        sim, clock, scenario = None, time.monotonic, None
+        robot = thymio.Thymio()
+        vision = StartOnlyCamera(tuple(args.start))
+        goal = tuple(args.goal) if args.goal else (400.0, 0.0)
+        plan = straight_line_plan
     else:
         sim, clock, scenario = None, time.monotonic, None
         goal = tuple(args.goal) if args.goal else CAMERA_DEFAULT_GOAL
@@ -322,7 +328,7 @@ def main():
         log = run(robot, vision, plan, goal, clock, sim, scenario)
     finally:
         robot.close()
-        if sim is None:
+        if hasattr(vision, "close"):     # seulement la vraie caméra
             vision.close()
 
     if sim is not None:
