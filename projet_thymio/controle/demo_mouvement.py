@@ -67,17 +67,18 @@ def run(robot, path, sim=None):
 
         if not avoiding and local_avoidance.obstacle_detected(reading.prox):
             avoiding = True
-            avoider.start(reading.prox, pose)
-            print(f"t={t:5.1f}s  obstacle -> évitement")
+            avoider.start(reading.prox, pose, follower.segment(pose))
+            print(f"t={t:5.1f}s  obstacle -> contournement")
 
         led = LED_FOLLOW
         if avoiding:
-            v_left, v_right, finished = avoider.step(reading.prox, pose)
-            led = LED_AVOID
-            if finished:
-                avoiding = False
-                # dans main.py on redemande un chemin ici, depuis la position actuelle
-                print(f"t={t:5.1f}s  obstacle dépassé -> retour au chemin")
+            avoid_left, avoid_right, finished = avoider.step(reading.prox, pose)
+            if not finished:
+                v_left, v_right = avoid_left, avoid_right
+                led = LED_AVOID
+            else:
+                avoiding = False         # retombé sur le carré (ou abandon) : on reprend le carré
+                print(f"t={t:5.1f}s  fin du contournement -> retour au chemin")
 
         # 3. on envoie les vitesses au robot
         robot.set_motors(v_left, v_right)

@@ -18,6 +18,7 @@ from typing import List
 
 from controle import motion_model
 
+LED_BRIGHTNESS = 0.2            # LEDs du dessus à 20 % : à fond elles éclairent le marqueur ArUco et la caméra le lit mal
 GROUND_LIFTED_THRESHOLD = 100   # capteurs de sol : soulevé de 5 cm ça donne 63 et 42, posé sur la table 914 et 588
 
 # Petit programme Aseba qu'on met sur le Thymio. Toutes les 50 ms il envoie lui même
@@ -107,8 +108,11 @@ class Thymio:
         }))
 
     def set_leds(self, r, g, b):
-        """Couleur des LEDs du dessus (0 à 32 pour chaque couleur). On n'envoie que si ça change."""
-        color = [int(r), int(g), int(b)]
+        """Couleur des LEDs du dessus (0 à 32 pour chaque couleur). On n'envoie que si ça change.
+
+        On baisse tout avec LED_BRIGHTNESS pour ne pas gêner la caméra.
+        """
+        color = [round(c * LED_BRIGHTNESS) for c in (r, g, b)]
         if color != self._leds:
             self._node.send_set_variables({"leds.top": color})
             self._leds = color
@@ -122,3 +126,4 @@ class Thymio:
         self._aw(self._node.set_variables({"motor.left.target": [0], "motor.right.target": [0]}))
         self._aw(self._node.stop())
         self._aw(self._node.unlock())
+        self._client.disconnect()   # sinon le programme reste bloqué à la fin (la connexion tourne encore en fond)

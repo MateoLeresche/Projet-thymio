@@ -71,7 +71,7 @@ def measure_rotation(robot):
 def show_prox(robot):
     print("Placer un obstacle (de la couleur de ceux de la démo) à 1, 2, 4, 6, 8, 10 cm devant")
     print("chaque capteur et noter la valeur. Ctrl+C pour arrêter.")
-    print("PROX_ENTER = valeur à la distance où on veut commencer à éviter (environ 5 cm),")
+    print("PROX_ENTER = valeur à la distance où on veut commencer à éviter (1000 avec l'obstacle de la démo, vu vers 6 cm),")
     print("PROX_EXIT  = valeur quand l'obstacle ne gêne plus (environ 10 cm).\n")
     try:
         while True:

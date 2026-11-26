@@ -245,3 +245,64 @@ Le dépassement a été divisé par 3 environ depuis ce matin (K = 2 : 14 à 28�
 
 - Soulevé à t = 1,8 s (après 11 cm) : détecté par les capteurs de sol, arrêt et LEDs rouges.
 - Reposé à t = 7,9 s : nouveau filtre ; sans caméra il ne peut pas s'initialiser, le robot reste arrêté jusqu'à la fin (30 s). Comportement attendu : avec la caméra, il repartira sur la première mesure visible.
+
+## Contournement Bug 2 (2026-11-26, sans caméra, --odometrie)
+
+### Capteurs avec l'obstacle de la démo (en face du capteur du milieu)
+
+| Distance | prox[2] milieu | Autres |
+|---|---|---|
+| Collé | 2218 | prox[1] 2026 |
+| 4 cm | 2292 | 0 |
+| 6 cm | 1239 | 0 |
+| 8 cm | 0 | 0 |
+| Main à 2 cm (pour vérifier les capteurs) | 4029 | 4184, 4147, 3030, 257 |
+
+L'obstacle de la démo ne dépasse jamais 2300, même collé, alors que la boîte blanche monte à 4300. Avec l'ancien seuil (2400) l'évitement ne pouvait pas se déclencher avant le contact.
+Nouveaux réglages : PROX_ENTER 1000, PROX_FRONT 2000, K_FOLLOW 0,001 (s'écarter proportionnellement à la valeur vue), R_ARC 16 cm. Choisis en simulation avec les deux courbes de capteur.
+
+### Test 2a : obstacle sur la ligne, 60 cm tout droit
+
+| Mesure | Valeur |
+|---|---|
+| Détection | t = 1,2 s, capteur du milieu à 1176 (environ 6 cm) |
+| Chemin retrouvé | t = 10,2 s, vers x = 42 cm (odométrie) |
+| Détour maximal | environ 15 cm sur le côté (odométrie) |
+| Distance mini à l'obstacle (à l'œil) | **5 cm, pas de contact** |
+| Mouvement | fluide, pas de saccade |
+| Durée d'un pas | 104 ms en moyenne, 124 ms max |
+
+Arrêt à 57 cm (3 cm avant le but) : écart-type du filtre au dessus de 5 cm, normal sans caméra après un long contournement. Corrigé : en mode --odometrie on ne s'arrête plus pour l'incertitude.
+
+### Test 2b : obstacle décalé de 3 cm à gauche
+
+| Mesure | Valeur |
+|---|---|
+| Détection | t = 1,6 s, capteur avant gauche à 2129 : obstacle gardé à gauche, robot passe à droite |
+| Chemin retrouvé | t = 7,0 s |
+| Arrivé | t = 10,3 s, au but |
+| Détour maximal | environ 6,5 cm (odométrie) |
+| Contact | **non** |
+
+### Test 2b : obstacle décalé de 3 cm à droite
+
+| Mesure | Valeur |
+|---|---|
+| Détection | t = 2,0 s, capteur droit (prox[3]) à 1837 : obstacle gardé à droite, robot passe à gauche |
+| Chemin retrouvé | t = 8,8 s |
+| Arrivé | t = 11,3 s, au but |
+| Détour maximal | environ 10 cm (odométrie, plus qu'à gauche : vu par le capteur d'à côté, plus vers l'avant) |
+| Contact | **non** |
+
+### Test 2c : grosse boîte (environ 13 × 15 cm) sur la ligne
+
+| Mesure | Valeur |
+|---|---|
+| Détection | t = 0,4 s, capteur du milieu à 1219 |
+| Chemin retrouvé | t = 12,5 s, vers x = 49 cm (bien après la boîte) |
+| Arrivé | t = 15,0 s, au but |
+| Détour maximal | environ 19 cm (odométrie), un petit à-coup au milieu quand il revoit le côté de la boîte |
+| Longueur du contournement | environ 60 cm (limite d'abandon : 1,5 m) |
+| Contact | **non** |
+
+Bilan : 4 essais (obstacle sur la ligne, décalé à gauche, décalé à droite, grosse boîte), aucun contact, mouvement fluide, chemin toujours repris et but atteint.

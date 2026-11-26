@@ -75,7 +75,8 @@ class PathFollower:
 
         follower = PathFollower(chemin)
         à chaque pas : v_left, v_right, fini = follower.update(pose)
-        nouveau chemin (après un évitement ou un kidnapping) : follower.set_path(nouveau_chemin)
+        nouveau chemin (après un kidnapping) : follower.set_path(nouveau_chemin)
+        après un évitement on garde le même chemin (le robot le reprend quand il retombe dessus)
     """
 
     def __init__(self, path=()):
@@ -97,6 +98,12 @@ class PathFollower:
     @property
     def done(self):
         return self.index >= len(self.path)
+
+    def segment(self, pose):
+        """Segment du chemin qu'on suit en ce moment : du point d'avant au point visé.
+        Sert à l'évitement pour savoir quand on retombe sur le chemin."""
+        a = self.path[self.index - 1] if self.index > 0 else (pose[0], pose[1])
+        return a, self.target
 
     def update(self, pose):
         # on saute les points déjà atteints (le premier c'est souvent là où le robot est déjà)

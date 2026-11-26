@@ -8,13 +8,13 @@ Tout a été testé sur le vrai robot, sauf avec la caméra de Sujith (branchée
 
 | Fichier | À quoi il sert |
 |---|---|
-| `main.py` | La boucle principale du projet : caméra, filtre de Matéo, chemin de Robin, suivi + évitement, moteurs. Elle gère aussi le kidnapping, le QR caché et le nouveau chemin après un évitement. |
+| `main.py` | La boucle principale du projet : caméra, filtre de Matéo, chemin de Robin, suivi + évitement, moteurs. Elle gère aussi le kidnapping, le QR caché et la reprise du chemin après un contournement. |
 | `fake_modules.py` | Une fausse caméra, une fausse carte et un planificateur en ligne droite (quand on n'a pas de carte). Ils renvoient les mêmes structures que `interfaces.py`. |
 | `messages.py` | Le seul fichier qui lit ou fabrique les structures de `interfaces.py` (PoseEstimate, Path, ControlInput). |
 | `motion_model.py` | Les valeurs mesurées du robot, la conversion unités Thymio / mm/s, l'odométrie. |
 | `thymio.py` | Le seul fichier qui parle au robot (tdmclient). |
 | `controller.py` | Le suivi du chemin avec la loi fluide du cours (Astolfi adapté). |
-| `local_avoidance.py` | L'évitement des obstacles vus par les capteurs infrarouges (Braitenberg). |
+| `local_avoidance.py` | Le contournement des obstacles vus par les capteurs infrarouges (Bug 2 du cours) : le robot longe l'obstacle et reprend le chemin dès qu'il retombe dessus. |
 | `simulator.py` | Un faux Thymio pour tester sans le robot. |
 | `demo_mouvement.py` | Le carré de 40 cm avec évitement, utilisé pour régler les virages et l'évitement. |
 | `calibration.py` | Les mesures à faire sur le robot (vitesse, rotation, capteurs). |
@@ -41,7 +41,7 @@ Il faut `tdmclient` pour le vrai robot (`pip install tdmclient`) et Thymio Suite
 Tout est branché :
 
 - **Caméra de Sujith** (`vision.realtime.RealCamera`) : `vision(t)` renvoie un `PoseMeasurement` (position du **milieu entre les deux roues** en mm et rad, `t` = moment où l'image a été **prise**), et `vision.environment(goal)` renvoie la carte une seule fois au début.
-- **Planificateur de Robin** : `planner.set_environment(carte)`, puis `main.py` appelle `planner.plan(estimation, goal)` au départ, après un évitement et après un kidnapping.
+- **Planificateur de Robin** : `planner.set_environment(carte)`, puis `main.py` appelle `planner.plan(estimation, goal)` au départ et après un kidnapping. Après un obstacle imprévu on ne recalcule pas de chemin : le robot contourne l'obstacle et reprend le chemin de base quand il retombe dessus (Bug 2). On redemande un chemin seulement s'il a fait 1,5 m autour sans le retrouver.
 - **Filtre de Matéo** : voir plus bas.
 
 En simulation (`--sim`) la caméra et la carte sont remplacées par `FakeCamera` et `fake_map` de `fake_modules.py`, donc pas besoin d'OpenCV pour la simulation et les tests.
@@ -65,8 +65,8 @@ Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. À chaque pas, `
 | Facteur Thymio vers mm/s | motion_model.py | 0,337 | ligne droite à 80 mm/s |
 | Empattement | motion_model.py | 96,5 mm | 2 tours sur place, photo |
 | Gain de rotation K_ALPHA | controller.py | 3 | carrés avec 1,5, 2 et 3 |
-| Seuil d'évitement | local_avoidance.py | 2400 (environ 8 cm) | courbe du capteur avec une boîte blanche |
-| Force du virage K_PROX | local_avoidance.py | 0,015 | essais avec un gobelet |
+| Seuil d'évitement PROX_ENTER | local_avoidance.py | 1000 | l'obstacle de la démo ne dépasse jamais 2300 (1239 à 6 cm, 0 à 8 cm) |
+| Contournement K_FOLLOW, R_ARC | local_avoidance.py | 0,001 et 16 cm | simulation, puis 4 essais réels sans contact (passe à environ 5 cm) |
 | Seuil robot soulevé | thymio.py | 100 | capteurs de sol posé et soulevé |
 
 ## Pour la démo
@@ -76,3 +76,5 @@ Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. À chaque pas, `
 - Pas d'obstacle imprévu à moins de 15 cm d'un coin du chemin.
 - Le but doit être à au moins 8 cm du cadre noir et des obstacles de la carte, sinon le planificateur ne trouve pas de chemin (`valid=False`) et le robot ne bouge pas.
 - Débrancher le câble de charge pendant les essais, il fausse la vitesse mesurée.
+- À la fin de `main.py --reel`, la ligne « durée d'un pas » doit être proche de 100 ms. En simulation, avec des pas de 200 ms le robot touche déjà le gobelet : il voit l'obstacle trop tard.
+- Avec un autre Thymio ou un autre obstacle, refaire `python -m controle.calibration prox` avec l'obstacle de la démo à 4, 6 et 8 cm : les capteurs ne donnent pas tous la même valeur. Avec la boîte blanche on montait à 4300, avec l'obstacle de la démo jamais plus de 2300, d'où `PROX_ENTER = 1000`. On peut tester un autre seuil sans toucher au code : `python -m controle.main --reel --prox-enter 1200`. À la fin, main.py affiche la plus grande valeur vue par les capteurs avant.
