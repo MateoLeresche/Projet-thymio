@@ -197,7 +197,7 @@ class GlobalPlanner:
     is called, so replanning after a kidnapping only costs start/goal edges.
     """
 
-    def __init__(self, margin_mm: float = 80.0, arc_step_deg: float = 45.0):
+    def __init__(self, margin_mm: float = 100.0, arc_step_deg: float = 45.0):
         self.margin = margin_mm
         self.arc_step_deg = arc_step_deg   # smaller = rounder corners, more nodes
         self.polys: List[Polygon] = []        # inflated
