@@ -196,7 +196,7 @@ class RealCamera:
                               True, (0, 0, 180), 2)
 
         # 3. Dessiner le chemin calcule
-        if path.valid:
+        if path is not None and path.valid:
             pixels = [world_to_model(x, y) for x, y in path.waypoints]
             for start, end in zip(pixels, pixels[1:]):
                 cv2.line(model, start, end, (0, 220, 220), 5)
@@ -242,7 +242,9 @@ class RealCamera:
             position = f"Position : x={estimate.x:.1f} mm, y={estimate.y:.1f} mm"
             theta_text = f"Theta : {estimate.theta:.3f} rad"
             measurement_text = "Camera : mesure utilisee" if estimate.measurement_used else "Camera : prediction seule"
-            path_text = "Chemin : valide" if path.valid else "Chemin : invalide"
+            path_text = "Chemin : non calcule" if path is None else (
+                "Chemin : valide" if path.valid else "Chemin : invalide"
+            )
             status_color = (0, 200, 0) if estimate.measurement_used else (0, 180, 255)
             if estimate.kidnapped:
                 status = "ROBOT : KIDNAPPING DETECTE"

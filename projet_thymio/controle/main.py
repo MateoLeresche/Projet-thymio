@@ -36,7 +36,6 @@ from controle.fake_modules import FakeCamera, StartOnlyCamera, fake_map, straigh
 from planification.global_navigation import GlobalPlanner
 
 DT = 0.1            # durée d'un pas en secondes
-MAX_TIME = 90.0     # au bout de 90 s on arrête tout, au cas où
 
 LED_FOLLOW = (0, 0, 32)      # bleu : suit le chemin
 LED_AVOID = (32, 12, 0)      # orange : évite un obstacle
@@ -46,7 +45,7 @@ LED_DONE = (0, 32, 0)        # vert : arrivé
 CAMERA_DEFAULT_GOAL = (400.0, 100.0)
 
 
-def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
+def run(robot, vision, plan, goal, clock, sim=None, scenario=None, max_duration=None):
     """La boucle. Renvoie un journal [(t, pose estimée ou None, vraie pose ou None), ...] pour les figures."""
     kalman = FilterNode()
     follower = controller.PathFollower()
@@ -57,12 +56,13 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
     lifted = False
     last_image_t = None   # instant de la dernière image donnée au filtre
     last_stop_reason = None
+    goal_reached = False
     log = []
     step_times = []       # vraie durée de chaque pas, pour voir si la caméra ralentit la boucle
     max_front = 0         # plus grande valeur vue par les 5 capteurs avant pendant l'essai
     t0 = clock()
 
-    while clock() - t0 < MAX_TIME:
+    while max_duration is None or clock() - t0 < max_duration:
         step_start = time.monotonic()
         if log:
             step_times.append(step_start - last_step_start)
@@ -85,6 +85,14 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
             if not lifted:
                 print(f"t={now - t0:5.1f}s  robot soulevé -> arrêt")
             lifted = True
+            vision(now)  # garder la capture active sans intégrer une pose pendant le kidnapping
+            if sim is None and hasattr(vision, "show_interface"):
+                key = vision.show_interface(None, current_path, goal)
+                if key == ord("q"):
+                    robot.set_motors(0.0, 0.0)
+                    robot.set_leds(*LED_STOP)
+                    print("arrêt demandé")
+                    break
             stop()
             continue
         if lifted:
@@ -93,6 +101,7 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
             kalman = FilterNode()        # nouveau filtre, il prendra la position de la prochaine image de la caméra
             avoiding = False
             need_path = True
+            goal_reached = False
 
         # 2. Filtre : la vitesse mesurée des roues à chaque pas, et la caméra seulement si c'est une
         #    nouvelle image (si on redonne la même, le filtre la compte plusieurs fois et se croit trop sûr)
@@ -119,6 +128,7 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
                 last_stop_reason = reason
             if estimate.kidnapped:
                 need_path = True
+                goal_reached = False
             stop()
             continue
         last_stop_reason = None
@@ -137,16 +147,30 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
             print(f"t={now - t0:5.1f}s  nouveau chemin : {len(points)} points")
 
         if sim is None and hasattr(vision, "show_interface"):
-            vision.show_interface(estimate, current_path, goal)
+            key = vision.show_interface(estimate, current_path, goal)
+            if key == ord("q"):
+                robot.set_motors(0.0, 0.0)
+                robot.set_leds(*LED_STOP)
+                print("arrêt demandé")
+                break
+
+        if goal_reached:
+            robot.set_motors(0.0, 0.0)
+            robot.set_leds(*LED_DONE)
+            log.append((now - t0, pose, sim.true_pose if sim else None))
+            wait(robot, step_start, sim)
+            continue
 
         # 4. On suit le chemin, sauf si un obstacle est trop près : là c'est l'évitement qui commande
         v_left, v_right, done = follower.update(pose)
         if done:
+            goal_reached = True
             robot.set_motors(0.0, 0.0)
             robot.set_leds(*LED_DONE)
             log.append((now - t0, pose, sim.true_pose if sim else None))
             print(f"t={now - t0:5.1f}s  arrivé")
-            break
+            wait(robot, step_start, sim)
+            continue
 
         if not avoiding and local_avoidance.obstacle_detected(reading.prox):
             avoiding = True
@@ -173,6 +197,9 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
         log.append((now - t0, pose, sim.true_pose if sim else None))
         wait(robot, step_start, sim)
 
+    if max_duration is not None and clock() - t0 >= max_duration:
+        robot.set_motors(0.0, 0.0)
+        robot.set_leds(*LED_STOP)
     if sim is None:
         # si le max reste sous le seuil alors que le robot a touché l'obstacle, il faut baisser PROX_ENTER
         print(f"capteurs avant : max {max_front} pendant l'essai (seuil d'évitement {local_avoidance.PROX_ENTER})")

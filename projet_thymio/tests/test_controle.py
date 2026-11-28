@@ -71,14 +71,48 @@ def test_main_loop_simulated():
     obstacle imprévu, QR caché 3 s, kidnapping."""
     from controle import main
     robot = SimThymio(start_pose=main.SIM_START, obstacles=[main.SIM_MAP_OBSTACLE, main.SIM_OBSTACLE], seed=1)
-    vision = main.FakeCamera(robot, hidden=main.SIM_HIDDEN)
+    camera = main.FakeCamera(robot, hidden=main.SIM_HIDDEN)
+    lifted_camera_calls = []
+
+    def vision(t):
+        if robot.lifted:
+            lifted_camera_calls.append(t)
+        return camera(t)
+
     planner = main.GlobalPlanner()
     planner.set_environment(main.fake_map(main.SIM_ARENA, [main.SIM_MAP_OBSTACLE], main.SIM_GOAL))
-    log = main.run(robot, vision, planner.plan, main.SIM_GOAL, lambda: robot.t, robot, main.sim_scenario)
+    log = main.run(robot, vision, planner.plan, main.SIM_GOAL, lambda: robot.t, robot, main.sim_scenario,
+                   max_duration=90.0)
     x, y, _ = robot.true_pose
     assert math.hypot(x - main.SIM_GOAL[0], y - main.SIM_GOAL[1]) < 40.0
     assert not robot.collides()
     assert any(pose is None for _, pose, _ in log)          # arrêté pendant le kidnapping
+    assert lifted_camera_calls                            # la caméra reste appelée pendant le kidnapping
+    assert log[-1][0] >= 89.9                               # la boucle reste active après l'arrivée
+
+
+def test_robot_resumes_after_kidnap_at_goal():
+    from controle import main
+
+    goal = (0.0, 0.0)
+    robot = SimThymio(start_pose=(0.0, 0.0, 0.0), obstacles=[], seed=1)
+    camera = main.FakeCamera(robot)
+    plan_calls = []
+
+    def plan(estimate, target):
+        plan_calls.append((estimate.x, estimate.y))
+        return main.straight_line_plan(estimate, target)
+
+    def scenario(t, sim):
+        if 0.5 <= t < 1.0 and not sim.lifted:
+            sim.lift()
+        elif t >= 1.0 and sim.lifted:
+            sim.put_down((100.0, 0.0, 0.0))
+
+    main.run(robot, camera, plan, goal, lambda: robot.t, robot, scenario, max_duration=8.0)
+
+    assert len(plan_calls) >= 2                  # un nouveau chemin est calculé après le kidnapping
+    assert math.hypot(robot.true_pose[0], robot.true_pose[1]) < 40.0
 
 
 def test_same_image_given_once_to_filter(monkeypatch):
@@ -104,7 +138,8 @@ def test_same_image_given_once_to_filter(monkeypatch):
             images[t_image] = camera(t_image)
         return images[t_image]
 
-    main.run(robot, slow_camera, main.straight_line_plan, (300.0, 0.0), lambda: robot.t, robot)
+    main.run(robot, slow_camera, main.straight_line_plan, (300.0, 0.0), lambda: robot.t, robot,
+             max_duration=2.0)
     assert len(received) > 5
     assert len(received) == len(set(received))      # jamais 2 fois la même image
 

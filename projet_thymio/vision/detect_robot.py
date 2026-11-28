@@ -91,27 +91,6 @@ def detect_robot(img, detector, t=None):
                     3
                 )
 
-                # Affichage des coordonnées
-                cv2.putText(
-                    result,
-                    f"x={x:.1f} mm, y={y:.1f} mm",
-                    (20, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0, 255, 0),
-                    2
-                )
-
-                cv2.putText(
-                    result,
-                    f"theta={theta:.2f} rad",
-                    (20, 70),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0, 255, 0),
-                    2
-                )
-
                 break
 
     return result, measurement

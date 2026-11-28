@@ -35,6 +35,7 @@ pytest
 ```
 
 Il faut `tdmclient` pour le vrai robot (`pip install tdmclient`) et Thymio Suite ouvert, sans ouvrir de langage dedans (sinon il bloque le robot).
+Après l'arrivée au but, ou pendant que le robot est soulevé, le robot reste arrêté tandis que le programme continue d'actualiser la caméra et l'interface. Après avoir reposé le robot, le filtre et le chemin sont réinitialisés et le déplacement reprend vers le but. Appuyer sur `q` dans l'interface ou sur `Ctrl+C` dans le terminal pour quitter.
 
 ## Les modules dans main.py
 
