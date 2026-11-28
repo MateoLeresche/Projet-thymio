@@ -5,30 +5,30 @@
        reposé on repart de zéro (nouveau filtre, nouveau chemin)
     2. filtre de Kalman de Matéo : vitesse des roues + mesure caméra, ça donne la position.
        Si le filtre n'a pas encore de position ou n'est plus sûr de lui, on s'arrête
-    3. on demande un chemin à Robin au départ, après un évitement ou après un kidnapping
-    4. on suit le chemin, ou on évite un obstacle vu par les capteurs infrarouges
+    3. on demande un chemin à Robin au départ et après un kidnapping
+    4. on suit le chemin, ou on contourne un obstacle vu par les capteurs infrarouges
+       jusqu'à retomber sur le chemin (Bug 2)
     5. on envoie les vitesses aux moteurs
 
 Les modules ne s'échangent que les structures de interfaces.py :
     vision(t) donne un PoseMeasurement, plan(estimation, goal) donne un Path
     (vision peut redonner la dernière image : on regarde son t pour savoir si elle est nouvelle)
-Le planificateur est celui de Robin (planification/global_navigation.py). Il lui faut la
-carte (un Environment) que donnera la caméra de Sujith. En attendant, en simulation on
-utilise la fausse caméra et la fausse carte de fake_modules.py. Sur le vrai robot sans
-caméra on n'a pas de carte, donc on va en ligne droite.
+Le planificateur est celui de Robin (planification/global_navigation.py), la caméra et la
+carte (un Environment) sont celles de Sujith (vision/realtime.py). En simulation on utilise
+la fausse caméra et la fausse carte de fake_modules.py. Sur le vrai robot sans caméra
+(--odometrie) on n'a pas de carte, donc on va en ligne droite.
 
     (à lancer depuis le dossier projet_thymio/)
     python -m controle.main --sim                       # tout simulé : obstacle, QR caché, kidnapping
     python -m controle.main --sim --plot data/main.png
     python -m controle.main --camera --goal 400 100     # caméra seule, sans Thymio
     python -m controle.main --reel --goal 400 100       # vrai robot avec caméra
+    python -m controle.main --odometrie --goal 400 0    # vrai robot sans caméra (le filtre fait juste de l'odométrie)
 """
 
 import argparse
 import math
 import time
-
-import cv2
 
 from filtre.filter_node import FilterNode
 from controle import controller, local_avoidance, messages, thymio
@@ -58,14 +58,20 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
     last_image_t = None   # instant de la dernière image donnée au filtre
     last_stop_reason = None
     log = []
+    step_times = []       # vraie durée de chaque pas, pour voir si la caméra ralentit la boucle
+    max_front = 0         # plus grande valeur vue par les 5 capteurs avant pendant l'essai
     t0 = clock()
 
     while clock() - t0 < MAX_TIME:
         step_start = time.monotonic()
+        if log:
+            step_times.append(step_start - last_step_start)
+        last_step_start = step_start
         now = clock()
         if scenario is not None:
             scenario(now - t0, sim)
         reading = robot.read()
+        max_front = max(max_front, max(reading.prox[:5]))
 
         def stop():
             # on arrête le robot et on passe au pas suivant
@@ -106,12 +112,10 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
         if messages.must_stop(estimate):
             std_x = estimate.P[0][0] ** 0.5
             std_y = estimate.P[1][1] ** 0.5
-            reason = (
-                f"kidnapping={estimate.kidnapped}, "
-                f"stdx={std_x:.1f} mm, stdy={std_y:.1f} mm"
-            )
+            # on n'écrit le message qu'une fois par raison d'arrêt (sinon une ligne tous les 0,1 s)
+            reason = "kidnapping vu par le filtre" if estimate.kidnapped else "filtre trop incertain"
             if reason != last_stop_reason:
-                print(f"t={now - t0:5.1f}s  arrêt : {reason}")
+                print(f"t={now - t0:5.1f}s  arrêt : {reason} (écart-type x={std_x:.0f} mm, y={std_y:.0f} mm)")
                 last_stop_reason = reason
             if estimate.kidnapped:
                 need_path = True
@@ -120,7 +124,7 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
         last_stop_reason = None
         pose = messages.pose_tuple(estimate)
 
-        # 3. Chemin : on en redemande un au départ, après un évitement et après un kidnapping
+        # 3. Chemin : on en demande un au départ et après un kidnapping
         if need_path:
             current_path = plan(estimate, goal)
             points = messages.path_points(current_path)
@@ -146,17 +150,22 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
 
         if not avoiding and local_avoidance.obstacle_detected(reading.prox):
             avoiding = True
-            avoider.start(reading.prox, pose)
-            print(f"t={now - t0:5.1f}s  obstacle -> évitement")
+            avoider.start(reading.prox, pose, follower.segment(pose))
+            print(f"t={now - t0:5.1f}s  obstacle -> contournement (capteurs avant : {list(reading.prox[:5])})")
 
         led = LED_FOLLOW
         if avoiding:
-            v_left, v_right, finished = avoider.step(reading.prox, pose)
-            led = LED_AVOID
-            if finished:
+            avoid_left, avoid_right, finished = avoider.step(reading.prox, pose)
+            if not finished:
+                v_left, v_right = avoid_left, avoid_right   # pendant le contournement c'est l'évitement qui commande
+                led = LED_AVOID
+            elif avoider.gave_up:
                 avoiding = False
-                need_path = True         # nouveau chemin depuis ici, sinon le point visé peut être derrière l'obstacle
-                print(f"t={now - t0:5.1f}s  obstacle dépassé -> nouveau chemin")
+                need_path = True         # on a tourné autour sans retrouver le chemin : on en redemande un
+                print(f"t={now - t0:5.1f}s  chemin pas retrouvé -> nouveau chemin")
+            else:
+                avoiding = False         # on est retombé sur le chemin : on le reprend
+                print(f"t={now - t0:5.1f}s  chemin retrouvé -> on le reprend")
 
         # 5. On envoie tout au robot
         robot.set_motors(v_left, v_right)
@@ -164,6 +173,13 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None):
         log.append((now - t0, pose, sim.true_pose if sim else None))
         wait(robot, step_start, sim)
 
+    if sim is None:
+        # si le max reste sous le seuil alors que le robot a touché l'obstacle, il faut baisser PROX_ENTER
+        print(f"capteurs avant : max {max_front} pendant l'essai (seuil d'évitement {local_avoidance.PROX_ENTER})")
+    if sim is None and step_times:
+        # si les pas durent plus de 0,1 s le robot réagit en retard (obstacles vus trop tard, virages trop larges)
+        mean_ms = 1000 * sum(step_times) / len(step_times)
+        print(f"durée d'un pas : moyenne {mean_ms:.0f} ms, max {1000 * max(step_times):.0f} ms (il faudrait 100 ms)")
     return log
 
 
@@ -178,8 +194,8 @@ SIM_GOAL = (700.0, 500.0)
 SIM_ARENA = (1000.0, 700.0)              # taille de la zone (dans le cadre noir) en mm
 SIM_MAP_OBSTACLE = (400.0, 560.0, 50.0)  # une boîte connue, qui est sur la carte
 SIM_OBSTACLE = (340.0, 265.0, 20.0)      # un gobelet sur la ligne droite, qui n'est pas sur la carte
-SIM_HIDDEN = [(3.0, 6.0)]                # QR caché entre 3 et 6 s (en plein évitement)
-SIM_KIDNAP = (8.0, 10.0, (150.0, 450.0, 0.0))   # soulevé à 8 s, reposé à 10 s à cet endroit
+SIM_HIDDEN = [(3.0, 6.0)]                # QR caché entre 3 et 6 s (en plein contournement)
+SIM_KIDNAP = (11.0, 13.0, (150.0, 450.0, 0.0))  # soulevé à 11 s (après le contournement), reposé à 13 s à cet endroit
 
 
 def sim_scenario(t, sim):
@@ -279,11 +295,16 @@ def main():
     mode.add_argument("--sim", action="store_true", help="tout simulé")
     mode.add_argument("--camera", action="store_true", help="test de la caméra, du filtre et du planificateur sans Thymio")
     mode.add_argument("--reel", action="store_true", help="vrai robot avec caméra")
+    mode.add_argument("--odometrie", action="store_true", help="vrai robot sans caméra, position de départ donnée par --start")
     parser.add_argument("--goal", nargs=2, type=float, default=None, help="but x y en mm")
     parser.add_argument("--start", nargs=3, type=float, default=(0.0, 0.0, 0.0),
-                        help="vrai robot : pose de départ x y theta (mm, mm, rad)")
+                        help="--odometrie : pose de départ x y theta (mm, mm, rad)")
     parser.add_argument("--plot", default=None, help="enregistrer la figure (ex. data/main.png)")
+    parser.add_argument("--prox-enter", type=int, default=None,
+                        help="seuil d'évitement pour un autre Thymio ou obstacle (voir calibration prox), 1000 par défaut")
     args = parser.parse_args()
+    if args.prox_enter is not None:
+        local_avoidance.PROX_ENTER = args.prox_enter   # les capteurs changent d'un robot à l'autre
 
     if args.camera:
         goal = tuple(args.goal) if args.goal else CAMERA_DEFAULT_GOAL
@@ -304,6 +325,16 @@ def main():
         planner = GlobalPlanner(margin_mm=100)                                 # le planificateur de Robin
         planner.set_environment(fake_map(SIM_ARENA, [SIM_MAP_OBSTACLE], goal))   # carte : à remplacer par celle de Sujith
         plan = planner.plan
+    elif args.odometrie:
+        # vrai robot sans caméra : on donne la position de départ une fois, ensuite le filtre
+        # ne fait que de l'odométrie. Pas de carte, donc ligne droite jusqu'au but
+        sim, clock, scenario = None, time.monotonic, None
+        robot = thymio.Thymio()
+        vision = StartOnlyCamera(tuple(args.start))
+        goal = tuple(args.goal) if args.goal else (400.0, 0.0)
+        plan = straight_line_plan
+        # sans caméra l'incertitude ne fait que grandir : on ne s'arrête pas pour ça pendant les essais
+        messages.POSITION_STD_MAX_MM = float("inf")
     else:
         sim, clock, scenario = None, time.monotonic, None
         goal = tuple(args.goal) if args.goal else CAMERA_DEFAULT_GOAL
@@ -322,7 +353,7 @@ def main():
         log = run(robot, vision, plan, goal, clock, sim, scenario)
     finally:
         robot.close()
-        if sim is None:
+        if hasattr(vision, "close"):     # seulement la vraie caméra
             vision.close()
 
     if sim is not None:

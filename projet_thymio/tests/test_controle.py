@@ -49,7 +49,7 @@ def test_obstacle_is_avoided():
 def test_avoidance_turns_away_from_left_obstacle():
     prox = [3000, 2000, 0, 0, 0, 0, 0]
     avoid = local_avoidance.LocalAvoidance()
-    avoid.start(prox, (0, 0, 0))
+    avoid.start(prox, (0, 0, 0), ((0.0, 0.0), (1000.0, 0.0)))
     v_left, v_right, _ = avoid.step(prox, (0, 0, 0))
     assert v_left > v_right        # obstacle à gauche -> tourne à droite
 
@@ -107,3 +107,15 @@ def test_same_image_given_once_to_filter(monkeypatch):
     main.run(robot, slow_camera, main.straight_line_plan, (300.0, 0.0), lambda: robot.t, robot)
     assert len(received) > 5
     assert len(received) == len(set(received))      # jamais 2 fois la même image
+
+
+
+def test_contour_leaves_when_back_on_path():
+    """Bug 2 : on reprend le chemin quand on retombe dessus, plus loin, avec rien devant."""
+    avoid = local_avoidance.LocalAvoidance()
+    nothing = [0, 0, 0, 0, 0, 0, 0]
+    avoid.start([3000, 2000, 0, 0, 0, 0, 0], (100.0, 0.0, 0.0), ((0.0, 0.0), (1000.0, 0.0)))
+    assert avoid.side > 0                                   # obstacle à gauche, on le garde à gauche
+    assert not avoid.step(nothing, (120.0, -60.0, 0.0))[2]  # écarté du chemin : on continue
+    assert avoid.step(nothing, (300.0, 5.0, 0.0))[2]        # retombé sur le chemin plus loin : fini
+    assert not avoid.gave_up
