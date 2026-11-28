@@ -20,4 +20,4 @@ Q_FLOOR = np.diag([0.1, 0.1, 1e-4])        # [PLACEHOLDER]
 
 # Seuil NIS (chi2, 3 ddl, 99 %) pour rejeter une mesure aberrante (etape 4b)
 NIS_GATE = 11.34
-N_KIDNAP = 3                               # rejets consecutifs pour declencher un "kidnap" (0,3 s à 10 Hz)
+N_KIDNAP = 20                              # rejets consecutifs pour declencher un "kidnap" (2 s à 10 Hz)

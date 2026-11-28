@@ -49,7 +49,7 @@ En simulation (`--sim`) la caméra et la carte sont remplacées par `FakeCamera`
 
 Sur le vrai robot sans caméra (`--odometrie`) on n'a pas de carte, donc on garde la ligne droite (`straight_line_plan`).
 
-Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. À chaque pas, `main.py` fait `on_control`, puis `on_measurement` **seulement si c'est une nouvelle image** (on compare le `t` de l'image avec la précédente, donc Sujith peut redonner la même image tant qu'il n'en a pas de nouvelle), puis `step(time.monotonic())`. Tant que le filtre n'a pas vu le QR une première fois, `step` renvoie `None` et le robot reste arrêté. Le kidnapping est vu de deux façons : les capteurs de sol (robot soulevé, `thymio.is_lifted`) ou le filtre de Matéo (`kidnapped=True` quand la caméra ne colle plus à la prédiction 3 fois de suite). Dans les deux cas le robot s'arrête et on redemande un chemin. Quand il est reposé on crée un nouveau `FilterNode`, qui reprend la position de la prochaine image.
+Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. À chaque pas, `main.py` fait `on_control`, puis `on_measurement` **seulement si c'est une nouvelle image** (on compare le `t` de l'image avec la précédente, donc Sujith peut redonner la même image tant qu'il n'y en a pas de nouvelle), puis `step(time.monotonic())`. Tant que le filtre n'a pas vu le QR une première fois, `step` renvoie `None` et le robot reste arrêté. Le kidnapping est vu de deux façons : les capteurs de sol (robot soulevé, `thymio.is_lifted`) ou le filtre de Matéo (`kidnapped=True` quand la caméra ne colle plus à la prédiction 20 fois de suite). Dans les deux cas le robot s'arrête et on redemande un chemin. Quand il est reposé on crée un nouveau `FilterNode`, qui reprend la position de la prochaine image.
 
 ## Pour chacun
 
@@ -79,3 +79,10 @@ Le filtre (`filtre.filter_node.FilterNode`) est déjà le vrai. À chaque pas, `
 - Débrancher le câble de charge pendant les essais, il fausse la vitesse mesurée.
 - À la fin de `main.py --reel`, la ligne « durée d'un pas » doit être proche de 100 ms. En simulation, avec des pas de 200 ms le robot touche déjà le gobelet : il voit l'obstacle trop tard.
 - Avec un autre Thymio ou un autre obstacle, refaire `python -m controle.calibration prox` avec l'obstacle de la démo à 4, 6 et 8 cm : les capteurs ne donnent pas tous la même valeur. Avec la boîte blanche on montait à 4300, avec l'obstacle de la démo jamais plus de 2300, d'où `PROX_ENTER = 1000`. On peut tester un autre seuil sans toucher au code : `python -m controle.main --reel --prox-enter 1200`. À la fin, main.py affiche la plus grande valeur vue par les capteurs avant.
+
+## Changements récents (28/11/2026)
+
+- À l'arrivée au but, les moteurs restent arrêtés mais la boucle continue; `q` dans l'interface ou `Ctrl+C` dans le terminal permet de quitter.
+- La capture caméra continue pendant que le robot est soulevé. Après repose, le filtre et le chemin sont réinitialisés, puis le robot reprend vers le but.
+- Le compteur de perte caméra compte les nouvelles images : le mode « PREDICTING » s'affiche après 10 images manquées et revient à l'état caméra après 3 détections consécutives.
+- Le filtre confirme un kidnapping après 20 mesures aberrantes consécutives.

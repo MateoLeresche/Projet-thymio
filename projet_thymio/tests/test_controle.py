@@ -115,6 +115,108 @@ def test_robot_resumes_after_kidnap_at_goal():
     assert math.hypot(robot.true_pose[0], robot.true_pose[1]) < 40.0
 
 
+def test_prediction_remains_visible_when_camera_is_hidden_and_filter_stops(monkeypatch):
+    from controle import main
+
+    robot = SimThymio(start_pose=(0.0, 0.0, 0.0), obstacles=[], seed=1)
+    camera = main.FakeCamera(robot)
+    displayed = []
+
+    class Vision:
+        def __call__(self, t):
+            if t > 0.0:
+                from interfaces import PoseMeasurement
+                return PoseMeasurement(t=t, visible=False)
+            return camera(t)
+
+        def show_interface(self, estimate, path, goal, robot_detected=None, prediction_active=False):
+            displayed.append((estimate, robot_detected, prediction_active))
+            return -1
+
+    monkeypatch.setattr(messages, "POSITION_STD_MAX_MM", 0.0)
+    main.run(robot, Vision(), main.straight_line_plan, (300.0, 0.0),
+             lambda: robot.t, max_duration=2.5)
+
+    assert displayed
+    assert all(estimate is not None for estimate, _, _ in displayed)
+    assert any(not detected for _, detected, _ in displayed)
+    assert any(not estimate.measurement_used for estimate, _, _ in displayed)
+    prediction_frames = [i for i, (_, _, active) in enumerate(displayed) if active]
+    assert prediction_frames and prediction_frames[0] >= main.PREDICTION_AFTER_MISSED_FRAMES
+    assert all(not active for _, _, active in displayed[:main.PREDICTION_AFTER_MISSED_FRAMES - 1])
+
+
+def test_repeated_camera_frame_does_not_advance_prediction_threshold(monkeypatch):
+    from controle import main
+    from interfaces import PoseMeasurement
+
+    robot = SimThymio(start_pose=(0.0, 0.0, 0.0), obstacles=[], seed=1)
+    camera = main.FakeCamera(robot)
+    displayed = []
+
+    class Vision:
+        def __call__(self, t):
+            if t == 0.0:
+                return camera(t)
+            return PoseMeasurement(t=0.1, visible=False)
+
+        def show_interface(self, estimate, path, goal, robot_detected=None, prediction_active=False):
+            displayed.append(prediction_active)
+            return -1
+
+    monkeypatch.setattr(messages, "POSITION_STD_MAX_MM", 0.0)
+    main.run(robot, Vision(), main.straight_line_plan, (300.0, 0.0),
+             lambda: robot.t, max_duration=1.0)
+
+    assert displayed
+    assert not any(displayed)
+
+
+def test_prediction_status_requires_confirmed_recovery_frames():
+    from controle import main
+    from interfaces import PoseMeasurement
+
+    missed = 0
+    active = False
+    recovery = 0
+    hidden = PoseMeasurement(t=0.0, visible=False)
+    visible = PoseMeasurement(t=1.0, visible=True)
+
+    for frame_index in range(main.PREDICTION_AFTER_MISSED_FRAMES):
+        missed, active, recovery = main.update_prediction_status(
+            hidden, True, missed, active, recovery,
+        )
+    assert active
+
+    missed, active, recovery = main.update_prediction_status(visible, True, missed, active, recovery)
+    assert active
+    missed, active, recovery = main.update_prediction_status(visible, False, missed, active, recovery)
+    assert active
+
+    for frame_index in range(main.CAMERA_RECOVERY_FRAMES - 1):
+        visible = PoseMeasurement(t=2.0 + frame_index, visible=True)
+        missed, active, recovery = main.update_prediction_status(
+            visible, True, missed, active, recovery,
+        )
+    assert not active
+
+
+def test_prediction_uncertainty_ellipse_uses_position_covariance():
+    from interfaces import PoseEstimate
+    from vision.realtime import _position_uncertainty_ellipse
+
+    estimate = PoseEstimate(
+        t=0.0, x=0.0, y=0.0, theta=0.0,
+        P=np.diag([100.0, 25.0, 0.01]),
+        measurement_used=False,
+    )
+
+    axes, angle = _position_uncertainty_ellipse(estimate, pixels_per_mm=0.1)
+
+    assert axes == (2, 1)
+    assert math.isclose(angle, 0.0, abs_tol=1e-9)
+
+
 def test_same_image_given_once_to_filter(monkeypatch):
     """La caméra prend une image toutes les 0,3 s mais on l'appelle toutes les 0,1 s :
     le filtre ne doit recevoir chaque image qu'une fois."""

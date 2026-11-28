@@ -50,7 +50,7 @@ def test_kidnapping_detected():
     k = run["kidnapped"]
     assert k.sum() == 1                     # détecte le kidnapping une seule fois
     t_det = run["t"][np.argmax(k)]
-    assert 10.0 < t_det < 10.6              # détecte le kidnapping rapidement (environ 0.3 s)
+    assert 10.0 < t_det < 12.1              # détecte le kidnapping après confirmation (environ 2 s)
     err = np.linalg.norm(run["est"][-1][:2] - run["truth"][-1][:2])
     assert err < 10.0                       # l'estimation se recolle rapidement (environ 5 cm)
 

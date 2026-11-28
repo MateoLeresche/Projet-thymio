@@ -166,3 +166,9 @@ Ces valeurs sont exprimees en :
 - mm pour `x` ;
 - mm pour `y` ;
 - radian pour `theta`.
+
+## Changements récents (28/11/2026)
+
+- Les coordonnées `x`, `y` et l'angle `theta` ne sont plus écrits en surimpression sur l'image brute de la caméra; les informations restent dans le panneau d'état et la modélisation 2D.
+- L'affichage distingue l'état caméra de l'état du filtre : le statut « PREDICTING » dépend d'images manquées consécutives (seuil réglé à 10 dans le contrôle).
+- Pendant la prédiction, la modélisation 2D affiche une ellipse de confiance à 95 %, calculée et orientée avec la covariance positionnelle x/y du filtre.

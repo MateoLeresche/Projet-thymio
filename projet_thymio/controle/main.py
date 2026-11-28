@@ -36,6 +36,8 @@ from controle.fake_modules import FakeCamera, StartOnlyCamera, fake_map, straigh
 from planification.global_navigation import GlobalPlanner
 
 DT = 0.1            # durée d'un pas en secondes
+PREDICTION_AFTER_MISSED_FRAMES = 10
+CAMERA_RECOVERY_FRAMES = 3
 
 LED_FOLLOW = (0, 0, 32)      # bleu : suit le chemin
 LED_AVOID = (32, 12, 0)      # orange : évite un obstacle
@@ -43,6 +45,28 @@ LED_STOP = (32, 0, 0)        # rouge : arrêté (soulevé, pas de position, filt
 LED_DONE = (0, 32, 0)        # vert : arrivé
 
 CAMERA_DEFAULT_GOAL = (400.0, 100.0)
+
+
+def update_prediction_status(image, image_is_new, missed_frames, prediction_active, recovery_frames):
+    """Apply display hysteresis using distinct camera frames only."""
+    if not image_is_new:
+        return missed_frames, prediction_active, recovery_frames
+
+    if image.visible:
+        if prediction_active:
+            recovery_frames += 1
+            if recovery_frames >= CAMERA_RECOVERY_FRAMES:
+                return 0, False, 0
+        else:
+            missed_frames = 0
+    else:
+        missed_frames += 1
+        recovery_frames = 0
+        if missed_frames >= PREDICTION_AFTER_MISSED_FRAMES:
+            prediction_active = True
+            recovery_frames = 0
+
+    return missed_frames, prediction_active, recovery_frames
 
 
 def run(robot, vision, plan, goal, clock, sim=None, scenario=None, max_duration=None):
@@ -55,6 +79,9 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None, max_duration=
     current_path = None
     lifted = False
     last_image_t = None   # instant de la dernière image donnée au filtre
+    missed_camera_frames = 0
+    recovery_camera_frames = 0
+    prediction_active = False
     last_stop_reason = None
     goal_reached = False
     log = []
@@ -85,9 +112,19 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None, max_duration=
             if not lifted:
                 print(f"t={now - t0:5.1f}s  robot soulevé -> arrêt")
             lifted = True
-            vision(now)  # garder la capture active sans intégrer une pose pendant le kidnapping
+            image = vision(now)  # garder la capture active sans intégrer une pose pendant le kidnapping
+            image_is_new = image is not None and image.t != last_image_t
+            if image_is_new:
+                last_image_t = image.t
+            missed_camera_frames, prediction_active, recovery_camera_frames = update_prediction_status(
+                image, image_is_new, missed_camera_frames, prediction_active, recovery_camera_frames,
+            )
             if sim is None and hasattr(vision, "show_interface"):
-                key = vision.show_interface(None, current_path, goal)
+                key = vision.show_interface(
+                    None, current_path, goal,
+                    robot_detected=not prediction_active,
+                    prediction_active=prediction_active,
+                )
                 if key == ord("q"):
                     robot.set_motors(0.0, 0.0)
                     robot.set_leds(*LED_STOP)
@@ -102,14 +139,22 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None, max_duration=
             avoiding = False
             need_path = True
             goal_reached = False
+            missed_camera_frames = 0
+            recovery_camera_frames = 0
+            prediction_active = False
 
         # 2. Filtre : la vitesse mesurée des roues à chaque pas, et la caméra seulement si c'est une
         #    nouvelle image (si on redonne la même, le filtre la compte plusieurs fois et se croit trop sûr)
         kalman.on_control(messages.control_input(now, reading.v_left, reading.v_right))
         image = vision(now)
-        if image is not None and image.t != last_image_t:
-            kalman.on_measurement(image)
+        image_is_new = image is not None and image.t != last_image_t
+        if image_is_new:
             last_image_t = image.t
+        missed_camera_frames, prediction_active, recovery_camera_frames = update_prediction_status(
+            image, image_is_new, missed_camera_frames, prediction_active, recovery_camera_frames,
+        )
+        if image_is_new:
+            kalman.on_measurement(image)
         estimate = kalman.step(now)      # None tant que le filtre n'a pas vu le QR une première fois
         if estimate is None:
             reason = "aucune première mesure caméra"
@@ -129,6 +174,17 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None, max_duration=
             if estimate.kidnapped:
                 need_path = True
                 goal_reached = False
+            if sim is None and hasattr(vision, "show_interface"):
+                key = vision.show_interface(
+                    estimate, current_path, goal,
+                    robot_detected=not prediction_active,
+                    prediction_active=prediction_active,
+                )
+                if key == ord("q"):
+                    robot.set_motors(0.0, 0.0)
+                    robot.set_leds(*LED_STOP)
+                    print("arrêt demandé")
+                    break
             stop()
             continue
         last_stop_reason = None
@@ -147,7 +203,11 @@ def run(robot, vision, plan, goal, clock, sim=None, scenario=None, max_duration=
             print(f"t={now - t0:5.1f}s  nouveau chemin : {len(points)} points")
 
         if sim is None and hasattr(vision, "show_interface"):
-            key = vision.show_interface(estimate, current_path, goal)
+            key = vision.show_interface(
+                estimate, current_path, goal,
+                robot_detected=not prediction_active,
+                prediction_active=prediction_active,
+            )
             if key == ord("q"):
                 robot.set_motors(0.0, 0.0)
                 robot.set_leds(*LED_STOP)
@@ -273,6 +333,9 @@ def run_camera_test(vision, goal):
         goal = environment.goal
     planner.set_environment(environment)
     last_image_t = None
+    missed_camera_frames = 0
+    recovery_camera_frames = 0
+    prediction_active = False
     last_visible = None
     last_heartbeat = time.monotonic()
     print("Mode caméra uniquement : aucun moteur ne sera envoyé")
@@ -286,9 +349,15 @@ def run_camera_test(vision, goal):
             print("Arrêt demandé par Ctrl+C")
             break
 
-        if image is not None and image.t != last_image_t:
-            kalman.on_measurement(image)
+        image_is_new = image is not None and image.t != last_image_t
+        if image_is_new:
             last_image_t = image.t
+        missed_camera_frames, prediction_active, recovery_camera_frames = update_prediction_status(
+            image, image_is_new, missed_camera_frames, prediction_active, recovery_camera_frames,
+        )
+
+        if image_is_new:
+            kalman.on_measurement(image)
 
             if last_visible != image.visible:
                 if image.visible:
@@ -302,7 +371,11 @@ def run_camera_test(vision, goal):
 
         if estimate is not None:
             path = planner.plan(estimate, goal)
-            key = vision.show_interface(estimate, path, goal)
+            key = vision.show_interface(
+                estimate, path, goal,
+                robot_detected=not prediction_active,
+                prediction_active=prediction_active,
+            )
             if key == ord("q"):
                 print("Arrêt demandé par la touche q")
                 break
@@ -310,7 +383,7 @@ def run_camera_test(vision, goal):
                 print(
                     f"pose=({estimate.x:.1f}, {estimate.y:.1f}, {estimate.theta:.2f}) "
                     f"chemin={'valide' if path.valid else 'invalide'} "
-                    f"camera={'mesure' if estimate.measurement_used else 'perdue'}"
+                    f"camera={'robot detecte' if image.visible else 'robot non detecte'}"
                 )
                 last_heartbeat = now
         time.sleep(DT)

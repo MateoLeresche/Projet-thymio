@@ -13,6 +13,21 @@ from .detect_goal import detect_red_goal
 from .calibration import ARENA_WIDTH_MM, ARENA_HEIGHT_MM, mm_to_pixel, pixel_to_mm
 
 
+def _position_uncertainty_ellipse(estimate, pixels_per_mm):
+    """Return OpenCV ellipse axes and angle for a 95% 2D position region."""
+    covariance = np.asarray(estimate.P[:2, :2], dtype=float)
+    covariance = (covariance + covariance.T) / 2.0
+    eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+    major_vector = eigenvectors[:, -1]
+    major_angle = math.degrees(math.atan2(-major_vector[1], major_vector[0]))
+    confidence_scale = math.sqrt(5.991)  # 95% quantile for chi-square with 2 degrees of freedom
+    axes = tuple(
+        max(1, int(round(math.sqrt(max(value, 0.0)) * confidence_scale * pixels_per_mm)))
+        for value in eigenvalues[::-1]
+    )
+    return axes, major_angle
+
+
 class RealCamera:
     """Caméra réelle utilisée par la boucle de contrôle."""
 
@@ -143,7 +158,7 @@ class RealCamera:
         # 1. Appliquer la conversion inverse des millimetres en pixels
         return mm_to_pixel(x, y)
 
-    def show_interface(self, estimate, path, goal):
+    def show_interface(self, estimate, path, goal, robot_detected=None, prediction_active=False):
         # Dimensions de la fenetre : zones gauche, droite et panneau inferieur
         main_width = 1400
         main_height = 800
@@ -211,6 +226,14 @@ class RealCamera:
         # 5. Dessiner le Thymio estime
         if estimate is not None:
             pose_px = world_to_model(estimate.x, estimate.y)
+            if prediction_active:
+                axes, angle = _position_uncertainty_ellipse(estimate, scale)
+                overlay = model.copy()
+                cv2.ellipse(overlay, pose_px, axes, angle, 0, 360, (180, 220, 255), -1)
+                cv2.addWeighted(overlay, 0.28, model, 0.72, 0, model)
+                cv2.ellipse(model, pose_px, axes, angle, 0, 360, (180, 80, 0), 2)
+                cv2.putText(model, "95%", (pose_px[0] + axes[0] + 4, pose_px[1]),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (120, 50, 0), 1)
             cv2.circle(model, pose_px, 16, (180, 0, 180), -1)
             arrow_length = 38
             arrow_end = (
@@ -231,21 +254,23 @@ class RealCamera:
                       (25, 25, 25), -1)
 
         if estimate is None:
-            status = "ROBOT : ATTENTE DE MESURE"
+            status = "ROBOT : DETECTE" if robot_detected else "ROBOT : ATTENTE DE MESURE"
             position = "Position : non disponible"
             theta_text = "Theta : non disponible"
-            measurement_text = "Camera : aucune mesure"
+            measurement_text = "Camera : robot detecte" if robot_detected else "Camera : aucune mesure"
             path_text = "Chemin : non calcule"
-            status_color = (0, 180, 255)
+            status_color = (0, 200, 0) if robot_detected else (0, 180, 255)
         else:
-            status = "ROBOT : CAMERA PERDUE" if not estimate.measurement_used else "ROBOT : ACTIF"
+            status = "ROBOT : PREDICTING" if prediction_active else "ROBOT : DETECTE"
             position = f"Position : x={estimate.x:.1f} mm, y={estimate.y:.1f} mm"
             theta_text = f"Theta : {estimate.theta:.3f} rad"
-            measurement_text = "Camera : mesure utilisee" if estimate.measurement_used else "Camera : prediction seule"
+            measurement_text = (
+                "Camera : prediction seule" if prediction_active else "Camera : mesure caméra"
+            )
             path_text = "Chemin : non calcule" if path is None else (
                 "Chemin : valide" if path.valid else "Chemin : invalide"
             )
-            status_color = (0, 200, 0) if estimate.measurement_used else (0, 180, 255)
+            status_color = (0, 180, 255) if prediction_active else (0, 200, 0)
             if estimate.kidnapped:
                 status = "ROBOT : KIDNAPPING DETECTE"
                 status_color = (0, 0, 255)

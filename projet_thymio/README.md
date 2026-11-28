@@ -73,3 +73,10 @@ docs/                  contrat d'interfaces, journal de calibration
 ## Journal de calibration
 
 Toute valeur mesurée (facteur Thymio → mm/s, empattement, bruit caméra, Q, taille de cellule, Ts) est notée dans `docs/CONTRAT_INTERFACES.md` (section 7) avec sa méthode et sa date. Utile pour le rapport et les questions du prof.
+
+## Changements récents (28/11/2026)
+
+- La boucle de contrôle reste active après l'arrivée au but, avec les moteurs arrêtés; elle continue également à actualiser la caméra pendant un soulèvement.
+- Après repose du robot, le filtre et le chemin sont réinitialisés pour reprendre vers le but.
+- L'interface distingue la détection caméra de la prédiction, affiche une zone d'incertitude à 95 % pendant la prédiction, et retarde cet état après des images consécutives manquées.
+- La confirmation d'un kidnapping par le filtre demande maintenant 20 mesures aberrantes consécutives.

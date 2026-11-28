@@ -65,7 +65,7 @@ z_k     = x_k + v_k                         (la caméra mesure directement x, y,
 ## Mesures aberrantes, kidnapping, retard
 
 - **Rejet des aberrations** : à chaque mesure on calcule le NIS (innovation normalisée par `S`). Au-dessus de `NIS_GATE` (11,34, χ² à 3 ddl, 99 %) la mesure n'est pas utilisée.
-- **Kidnapping** : après `N_KIDNAP = 3` rejets consécutifs (0,3 s à 10 Hz), le filtre se réinitialise sur la mesure caméra et publie `kidnapped = True` pendant ce pas. Un QR caché, lui, n'est **pas** un kidnapping (pas de mesure, donc pas de rejet). Ça ne marche que si la caméra voit le robot après avoir été déplacé. Côté contrôle, le robot soulevé est aussi détecté avec les capteurs de sol (`thymio.is_lifted`).
+- **Kidnapping** : après `N_KIDNAP = 20` rejets consécutifs (environ 2 s à 10 Hz), le filtre se réinitialise sur la mesure caméra et publie `kidnapped = True` pendant ce pas. Ce délai réduit les faux déclenchements dus à quelques mesures bruitées. Un QR caché, lui, n'est **pas** un kidnapping (pas de mesure, donc pas de rejet). Ça ne marche que si la caméra voit le robot après avoir été déplacé. Côté contrôle, le robot soulevé est aussi détecté avec les capteurs de sol (`thymio.is_lifted`).
 - **Retard caméra** : le filtre garde 2 s d'historique (états, covariances, commandes). Une mesure datée de `t` est appliquée à l'état de cet instant, puis les prédictions suivantes sont rejouées jusqu'à maintenant. Efficace jusqu'à environ 0,2 s de retard, au-delà la précision se dégrade (voir `compare_latence.py`). Désactivable avec `FilterNode(compensate=False)`.
 
 ## Paramètres (`params.py`)
@@ -76,7 +76,7 @@ z_k     = x_k + v_k                         (la caméra mesure directement x, y,
 | `SIGMA_CAM` | écart-type caméra (x, y, theta) → `R` | **PLACEHOLDER, à fournir par Sujith** (robot immobile, ~200 images) |
 | `SIGMA_V`, `SIGMA_W` | bruit sur la commande | mesuré : 3,6 mm/s et 0,075 rad/s (vitesse mesurée à 227 unités, voir journal de calibration) |
 | `Q_FLOOR` | bruit de modèle non expliqué | **PLACEHOLDER, à régler** |
-| `NIS_GATE`, `N_KIDNAP` | rejet de mesure et détection de kidnapping | χ² 99 % à 3 ddl ; 3 rejets de suite |
+| `NIS_GATE`, `N_KIDNAP` | rejet de mesure et détection de kidnapping | χ² 99 % à 3 ddl ; 20 rejets de suite |
 
 Tous les paramètres peuvent être surchargés pour un test :
 
@@ -116,3 +116,8 @@ Cas testés : caméra à 10 Hz et 2 Hz, QR caché 2 s et 5 s, odométrie seule, 
 **Robin** : replanifier quand `PoseEstimate.kidnapped` vaut `True`. `P` (covariance 3×3) est dans `PoseEstimate` si tu veux t'en servir.
 
 **Matthieu** : `controle/main.py` respecte déjà les règles 1 à 4. Le filtre signale maintenant `kidnapped` lui-même, en plus de ton test avec les capteurs de sol.
+
+## Changements récents (28/11/2026)
+
+- Le signal de kidnapping par mesures caméra aberrantes demande maintenant 20 rejets consécutifs (environ 2 s à 10 Hz), afin d'éviter qu'un écart bref déclenche une fausse alarme.
+- La prédiction en absence de mesure reste disponible dans `PoseEstimate`, avec sa covariance `P`; la commande peut s'arrêter selon le seuil de sécurité sans interrompre le calcul du filtre.
